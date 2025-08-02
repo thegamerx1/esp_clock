@@ -52,7 +52,7 @@ std::map<String, std::vector<Frame>> PANEL_FRAMES;
 String currentFrame = "pharmacy";
 
 MatrixPanel_I2S_DMA *dma_display = nullptr;
-uint16_t myBLACK, myWHITE, myRED, myGREEN, myBLUE, myGRAY;
+uint16_t myBLACK, myWHITE, myRED, myGREEN, myBLUE, myGRAY, myLightGRAY;
 uint16_t *GIF_BUFFER;
 uint8_t PANEL_BRIGHTNESS;
 bool POWER_SAVING = false;
@@ -335,11 +335,7 @@ void mqtt_task(void *pvParameters)
       Serial.println("Reconnecting to mqtt.");
       if (mqttclient.connect("ESP32Client", mqtt_user, mqtt_pass))
       {
-        assert(mqttclient.subscribe(mqtt_dht_2_topic));
-        assert(mqttclient.subscribe(mqtt_power_topic));
-        assert(mqttclient.subscribe(mqtt_animonly_topic));
-        assert(mqttclient.subscribe(mqtt_animation_topic));
-        assert(mqttclient.subscribe(mqtt_dht_2_topic));
+        assert(mqttclient.subscribe("home/esp1/#"));
         if (!mqttclient.subscribe(mqtt_brightness_topic))
         {
           mqttclient.publish(mqtt_brightness_topic, String(DEFAULT_BRIGHTNESS).c_str(), true);
@@ -497,6 +493,7 @@ void configure_panel(bool double_buff)
   myBLACK = dma_display->color565(0, 0, 0);
   myWHITE = dma_display->color565(255, 255, 255);
   myGRAY = dma_display->color565(128, 128, 128);
+  myLightGRAY = dma_display->color565(50, 50, 50);
   myRED = dma_display->color565(255, 0, 0);
   myGREEN = dma_display->color565(0, 255, 0);
   myBLUE = dma_display->color565(0, 0, 255);
@@ -661,6 +658,33 @@ void GIFDraw(GIFDRAW *pDraw)
     }
   }
 } /* GIFDraw() */
+
+void show_clock(bool night)
+{
+  String time = timeClient.getFormattedTime();
+
+  if (night)
+  {
+
+    dma_display->setCursor(3, 20);
+    dma_display->setTextSize(2);
+    dma_display->setTextColor(myLightGRAY);
+    dma_display->print(time.substring(0, 5));
+    dma_display->setCursor(21, 33);
+    dma_display->print(time.substring(6, 9));
+  }
+  else
+  {
+    dma_display->setCursor(3, 20);
+    dma_display->setTextSize(2);
+    dma_display->setTextColor(myWHITE);
+    dma_display->print(time.substring(0, 5));
+    dma_display->setTextColor(myGRAY);
+    dma_display->setCursor(21, 33);
+    dma_display->print(time.substring(6, 9));
+  }
+}
+
 // ---- LOOP ----
 void loop()
 {
@@ -671,13 +695,7 @@ void loop()
       dma_display->setBrightness8(5);
       unsigned long t_start = millis();
       dma_display->clearScreen();
-      dma_display->setCursor(3, 20);
-      dma_display->setTextSize(2);
-      dma_display->setTextColor(myGRAY);
-      String time = timeClient.getFormattedTime();
-      dma_display->print(time.substring(0, 5));
-      dma_display->setCursor(21, 33);
-      dma_display->print(time.substring(6, 9));
+      show_clock(true);
       dma_display->flipDMABuffer();
       unsigned long t_end = millis();
       unsigned long elapsed = t_end - t_start;
@@ -713,14 +731,7 @@ void loop()
       draw_dht((int)dht_2_temperature, (int)dht_2_humidity);
       xSemaphoreGive(dht_mutex);
 
-      dma_display->setCursor(3, 20);
-      dma_display->setTextSize(2);
-      dma_display->setTextColor(myWHITE);
-      String time = timeClient.getFormattedTime();
-      dma_display->print(time.substring(0, 5));
-      dma_display->setTextColor(myGRAY);
-      dma_display->setCursor(21, 33);
-      dma_display->print(time.substring(6, 9));
+      show_clock(false);
 
       dma_display->setTextSize(1);
       // dma_display->setTextColor(myWHITE);

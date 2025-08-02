@@ -289,8 +289,7 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   }
   else if (strcmp(topic, mqtt_power_topic) == 0)
   {
-    Serial.println(val);
-    if (val == "on")
+    if (val == "off")
     {
       Serial.println("Entering power save mode");
       pause_tasks_and_reduce_clock();
@@ -301,10 +300,10 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
       restore_clock_and_resume_tasks();
     }
   }
-  // else if (strcmp(topic, mqtt_animonly_topic) == 0)
-  // {
-  //   ANIM_ONLY_MODE
-  // }
+  else if (strcmp(topic, mqtt_animonly_topic) == 0)
+  {
+    ANIM_ONLY_MODE = (val == "on");
+  }
   else if (strcmp(topic, mqtt_animation_topic) == 0)
   {
     Serial.println("Received animation: " + val);

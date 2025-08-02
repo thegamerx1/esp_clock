@@ -337,6 +337,7 @@ void mqtt_task(void *pvParameters)
       if (mqttclient.connect("ESP32Client", mqtt_user, mqtt_pass))
       {
         assert(mqttclient.subscribe("home/esp1/#"));
+        assert(mqttclient.subscribe(mqtt_dht_2_topic));
         if (!mqttclient.subscribe(mqtt_brightness_topic))
         {
           mqttclient.publish(mqtt_brightness_topic, String(DEFAULT_BRIGHTNESS).c_str(), true);

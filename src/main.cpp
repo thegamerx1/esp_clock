@@ -668,6 +668,7 @@ void loop()
   {
     if (SHOW_CLOCK_ON_SLEEP)
     {
+      dma_display->setBrightness8(5);
       unsigned long t_start = millis();
       dma_display->clearScreen();
       dma_display->setCursor(3, 20);

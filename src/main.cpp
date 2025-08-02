@@ -9,7 +9,6 @@
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <AnimatedGIF.h>
 #include "Arduino.h"
-#include <NTPClient.h>
 #include "time.h"
 #include <esp_system.h>
 #include <map>
@@ -204,17 +203,19 @@ void dht_task(void *pvParameters)
 WiFiClientSecure espClient;
 WiFiUDP espUdpClient;
 
-NTPClient timeClient(espUdpClient, "212.230.255.2", 0, 240000);
-void ntp_task(void *pvParameters)
-{
-  timeClient.begin();
-  vTaskDelay(pdMS_TO_TICKS(100));
-  while (1)
-  {
-    timeClient.update();
-    vTaskDelay(pdMS_TO_TICKS(5000));
-  }
-}
+#define NTP_SERVER "212.230.255.2"
+
+// NTPClient timeClient(espUdpClient, NTP_SERVER, 0, 240000);
+// void ntp_task(void *pvParameters)
+// {
+//   timeClient.begin();
+//   vTaskDelay(pdMS_TO_TICKS(100));
+//   while (1)
+//   {
+//     timeClient.update();
+//     vTaskDelay(pdMS_TO_TICKS(5000));
+//   }
+// }
 
 PubSubClient mqttclient(espClient);
 
@@ -543,7 +544,8 @@ void setup()
   xTaskCreate(dht_task, "dht_task", 8192, NULL, 5, NULL);
   xTaskCreate(mqtt_task, "mqtt_task", 16384, NULL, 5, NULL);
   xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 5, NULL);
-  xTaskCreate(ntp_task, "ntp_task", 4096, NULL, 5, &task_handles[0]);
+  // xTaskCreate(ntp_task, "ntp_task", 4096, NULL, 5, &task_handles[0]);
+  configTzTime("CET-1CEST,M3.5.0,M10.5.0/3", NTP_SERVER);
   // boot_message("TEST SCREEN!");
   // test_screen();
   boot_message("OK!");
@@ -661,7 +663,12 @@ void GIFDraw(GIFDRAW *pDraw)
 
 void show_clock(bool night)
 {
-  String time = timeClient.getFormattedTime();
+  struct tm timeinfo;
+  getLocalTime(&timeinfo);
+  char buf[9];
+  strftime(buf, sizeof(buf), "%H:%M:%S", &timeinfo);
+  String time = String(buf);
+  // String time = timeClient.getFormattedTime();
 
   if (night)
   {

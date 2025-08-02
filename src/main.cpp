@@ -15,6 +15,8 @@
 #include <map>
 #include <vector>
 #include <String.h>
+#include "esp_pm.h"
+#include "esp_wifi.h"
 
 #define PANEL_RES_X 64
 #define PANEL_RES_Y 64
@@ -52,6 +54,9 @@ String currentFrame = "pharmacy";
 MatrixPanel_I2S_DMA *dma_display = nullptr;
 uint16_t myBLACK, myWHITE, myRED, myGREEN, myBLUE, myGRAY;
 uint16_t *GIF_BUFFER;
+uint8_t PANEL_BRIGHTNESS;
+bool POWER_SAVING = false;
+
 AnimatedGIF gif;
 void loadGifsFromDir(File dir)
 {
@@ -148,11 +153,13 @@ const char *mqtt_pass = MQTT_PASS;
 const char *mqtt_brightness_topic = "home/esp1/brightness";
 const char *mqtt_animation_topic = "home/esp1/animation";
 const char *mqtt_power_topic = "home/esp1/power";
+const char *mqtt_animonly_topic = "home/esp1/animonly";
 const char *mqtt_dht_topic = "home/esp1/dht22";
 const char *mqtt_dht_2_topic = "home/rpi/dht22";
 
 #define DHTPIN 39
 #define DHTTYPE DHT22
+bool ANIM_ONLY_MODE = false;
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -181,7 +188,14 @@ void dht_task(void *pvParameters)
       dht_temperature = temperature;
       xSemaphoreGive(dht_mutex);
     }
-    vTaskDelay(pdMS_TO_TICKS(4000));
+    if (POWER_SAVING)
+    {
+      vTaskDelay(pdMS_TO_TICKS(10000));
+    }
+    else
+    {
+      vTaskDelay(pdMS_TO_TICKS(4000));
+    }
   }
 }
 
@@ -202,6 +216,56 @@ void ntp_task(void *pvParameters)
 
 PubSubClient mqttclient(espClient);
 
+#define MAX_TASKS 6
+
+TaskHandle_t task_handles[MAX_TASKS] = {NULL};
+
+void pause_tasks_and_reduce_clock()
+{
+  for (int i = 0; i < MAX_TASKS; i++)
+  {
+    if (task_handles[i] != NULL)
+    {
+      vTaskSuspend(task_handles[i]);
+    }
+  }
+
+  // Lower CPU frequency to 80MHz (from default 240MHz)
+  esp_pm_config_esp32s3_t pm_config = {
+      .max_freq_mhz = 80,
+      .min_freq_mhz = 80,
+      .light_sleep_enable = true // enable light sleep
+  };
+  esp_pm_configure(&pm_config);
+
+  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+  POWER_SAVING = true;
+  dma_display->setBrightness(0);
+}
+
+void restore_clock_and_resume_tasks()
+{
+  // Restore CPU frequency to 240MHz
+  esp_pm_config_esp32s3_t pm_config = {
+      .max_freq_mhz = 240,
+      .min_freq_mhz = 240,
+      .light_sleep_enable = false};
+
+  esp_pm_configure(&pm_config);
+
+  esp_wifi_set_ps(WIFI_PS_NONE);
+  POWER_SAVING = false;
+
+  for (int i = 0; i < MAX_TASKS; i++)
+  {
+    if (task_handles[i] != NULL)
+    {
+      vTaskResume(task_handles[i]);
+    }
+  }
+  dma_display->setBrightness(PANEL_BRIGHTNESS);
+}
+
 void mqtt_callback(char *topic, byte *payload, unsigned int length)
 {
   Serial.println("topic: " + String(topic));
@@ -211,6 +275,7 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   {
     int brightness = val.toInt();
     dma_display->setBrightness8(brightness);
+    PANEL_BRIGHTNESS = brightness;
   }
   else if (strcmp(topic, mqtt_dht_2_topic) == 0)
   {
@@ -224,7 +289,22 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   }
   else if (strcmp(topic, mqtt_power_topic) == 0)
   {
+    Serial.println(val);
+    if (val == "on")
+    {
+      Serial.println("Entering power save mode");
+      pause_tasks_and_reduce_clock();
+    }
+    else
+    {
+      Serial.println("Exiting power save mode");
+      restore_clock_and_resume_tasks();
+    }
   }
+  // else if (strcmp(topic, mqtt_animonly_topic) == 0)
+  // {
+  //   ANIM_ONLY_MODE
+  // }
   else if (strcmp(topic, mqtt_animation_topic) == 0)
   {
     Serial.println("Received animation: " + val);
@@ -249,6 +329,7 @@ void mqtt_task(void *pvParameters)
       {
         assert(mqttclient.subscribe(mqtt_dht_2_topic));
         assert(mqttclient.subscribe(mqtt_power_topic));
+        assert(mqttclient.subscribe(mqtt_animonly_topic));
         assert(mqttclient.subscribe(mqtt_animation_topic));
         assert(mqttclient.subscribe(mqtt_dht_2_topic));
         if (!mqttclient.subscribe(mqtt_brightness_topic))
@@ -257,12 +338,20 @@ void mqtt_task(void *pvParameters)
           assert(mqttclient.subscribe(mqtt_brightness_topic));
         }
         Serial.println("Connected to MQTT.");
+        break;
       };
       vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
     mqttclient.loop();
-    vTaskDelay(pdMS_TO_TICKS(20));
+    if (POWER_SAVING)
+    {
+      vTaskDelay(pdMS_TO_TICKS(500));
+    }
+    else
+    {
+      vTaskDelay(pdMS_TO_TICKS(20));
+    }
   }
 }
 
@@ -279,7 +368,14 @@ void mqtt_publish(void *pvParameters)
       xSemaphoreGive(dht_mutex);
       mqttclient.publish(mqtt_dht_topic, payload.c_str());
     }
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    if (POWER_SAVING)
+    {
+      vTaskDelay(pdMS_TO_TICKS(15000));
+    }
+    else
+    {
+      vTaskDelay(pdMS_TO_TICKS(5000));
+    }
   }
 }
 
@@ -400,6 +496,7 @@ void configure_panel(bool double_buff)
   dma_display->begin();
   dma_display->clearScreen();
   dma_display->setBrightness8(DEFAULT_BRIGHTNESS); // 0-255
+  PANEL_BRIGHTNESS = DEFAULT_BRIGHTNESS;
 
   dma_display->setTextSize(1);     // size 1 == 8 pixels high
   dma_display->setTextWrap(false); // Don't wrap at end of line - will do ourselves
@@ -437,10 +534,11 @@ void setup()
 
   boot_message("TASKS!");
   dht_mutex = xSemaphoreCreateMutex();
+  task_handles[0] = NULL;
   xTaskCreate(dht_task, "dht_task", 8192, NULL, 5, NULL);
   xTaskCreate(mqtt_task, "mqtt_task", 16384, NULL, 5, NULL);
   xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 5, NULL);
-  xTaskCreate(ntp_task, "ntp_task", 4096, NULL, 5, NULL);
+  xTaskCreate(ntp_task, "ntp_task", 4096, NULL, 5, &task_handles[0]);
   // boot_message("TEST SCREEN!");
   // test_screen();
   boot_message("OK!");
@@ -557,9 +655,14 @@ void GIFDraw(GIFDRAW *pDraw)
 // ---- LOOP ----
 void loop()
 {
+  if (POWER_SAVING)
+  {
+    delay(1000);
+    return;
+  }
   uint32_t t = millis() / 8;
   uint32_t mode = t % 4096;
-  if (mode > 1024 && false)
+  if (mode > 1024 && !ANIM_ONLY_MODE)
   {
     if (xSemaphoreTake(dht_mutex, pdMS_TO_TICKS(0)) == pdTRUE)
     {

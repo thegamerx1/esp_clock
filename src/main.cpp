@@ -554,6 +554,7 @@ void setup()
     Serial.println("ps_malloc failed");
     return;
   }
+  memset(GIF_BUFFER, 0, 64 * 64 * 2);
 }
 
 void draw_dht(int temp, int hum)
@@ -722,11 +723,6 @@ void loop()
     int frameDelay = 0; // store delay for the last frame
     int then = 0;       // store overall delay
 
-    for (int i = 0; i < 64 * 64; i++)
-    {
-      GIF_BUFFER[i] = 0x0000; // RGB565 black
-    }
-
     while (gif.playFrame(true, &frameDelay))
     {
       // for (int y = 0; y < 64; y++)
@@ -754,7 +750,9 @@ void loop()
       }
     }
 
-    // gif.close();
+    memset(GIF_BUFFER, 0, 64 * 64 * 2);
+
+    gif.close();
     played_gif++;
   }
   // }

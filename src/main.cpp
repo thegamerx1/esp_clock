@@ -276,7 +276,10 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   if (strcmp(topic, mqtt_brightness_topic) == 0)
   {
     int brightness = val.toInt();
-    dma_display->setBrightness8(brightness);
+    if (!POWER_SAVING)
+    {
+      dma_display->setBrightness8(brightness);
+    }
     PANEL_BRIGHTNESS = brightness;
   }
   else if (strcmp(topic, mqtt_dht_2_topic) == 0)

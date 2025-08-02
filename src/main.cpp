@@ -153,6 +153,7 @@ const char *mqtt_pass = MQTT_PASS;
 const char *mqtt_brightness_topic = "home/esp1/brightness";
 const char *mqtt_animation_topic = "home/esp1/animation";
 const char *mqtt_power_topic = "home/esp1/power";
+const char *mqtt_show_clock_on_sleep_topic = "home/esp1/show_clock_on_sleep";
 const char *mqtt_animonly_topic = "home/esp1/animonly";
 const char *mqtt_dht_topic = "home/esp1/dht22";
 const char *mqtt_dht_2_topic = "home/rpi/dht22";
@@ -160,6 +161,7 @@ const char *mqtt_dht_2_topic = "home/rpi/dht22";
 #define DHTPIN 39
 #define DHTTYPE DHT22
 bool ANIM_ONLY_MODE = false;
+bool SHOW_CLOCK_ON_SLEEP = false;
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -303,6 +305,10 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   else if (strcmp(topic, mqtt_animonly_topic) == 0)
   {
     ANIM_ONLY_MODE = (val == "on");
+  }
+  else if (strcmp(topic, mqtt_show_clock_on_sleep_topic) == 0)
+  {
+    SHOW_CLOCK_ON_SLEEP = (val == "on");
   }
   else if (strcmp(topic, mqtt_animation_topic) == 0)
   {
@@ -657,7 +663,26 @@ void loop()
 {
   if (POWER_SAVING)
   {
-    delay(1000);
+    if (SHOW_CLOCK_ON_SLEEP)
+    {
+      unsigned long t_start = millis();
+      dma_display->clearScreen();
+      dma_display->setCursor(3, 20);
+      dma_display->setTextSize(2);
+      dma_display->setTextColor(myGRAY);
+      String time = timeClient.getFormattedTime();
+      dma_display->print(time.substring(0, 5));
+      dma_display->setCursor(21, 33);
+      dma_display->print(time.substring(6, 9));
+      dma_display->flipDMABuffer();
+      unsigned long t_end = millis();
+      unsigned long elapsed = t_end - t_start;
+      delay(1000 - min(elapsed, 1000UL));
+    }
+    else
+    {
+      delay(5000);
+    }
     return;
   }
   uint32_t t = millis() / 8;

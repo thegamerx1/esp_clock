@@ -156,11 +156,13 @@ const char *mqtt_animation_topic = "home/esp1/animation";
 const char *mqtt_power_topic = "home/esp1/power";
 const char *mqtt_show_clock_on_sleep_topic = "home/esp1/show_clock_on_sleep";
 const char *mqtt_animonly_topic = "home/esp1/animonly";
+const char *mqtt_disable_anims_topic = "home/esp1/animdisable";
 const char *mqtt_dht_topic = "home/esp1/dht22";
 const char *mqtt_dht_2_topic = "home/rpi/dht22";
 
 #define DHTPIN 39
 #define DHTTYPE DHT22
+bool ANIM_DISABLE = false;
 bool ANIM_ONLY_MODE = false;
 bool SHOW_CLOCK_ON_SLEEP = false;
 
@@ -311,6 +313,10 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   else if (strcmp(topic, mqtt_animonly_topic) == 0)
   {
     ANIM_ONLY_MODE = (val == "on");
+  }
+  else if (strcmp(topic, mqtt_disable_anims_topic) == 0)
+  {
+    ANIM_DISABLE = (val == "on");
   }
   else if (strcmp(topic, mqtt_show_clock_on_sleep_topic) == 0)
   {
@@ -780,7 +786,7 @@ void loop()
 
   uint32_t t = now / 8;
   uint32_t mode = t % 4096;
-  if (mode > 1024 && !ANIM_ONLY_MODE || true)
+  if (mode > 1024 && !ANIM_ONLY_MODE || ANIM_DISABLE)
   {
     if (xSemaphoreTake(dht_mutex, pdMS_TO_TICKS(0)) == pdTRUE)
     {

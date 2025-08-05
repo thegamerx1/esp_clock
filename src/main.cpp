@@ -5,6 +5,8 @@
 #include <WiFiUdp.h>
 #include <LittleFS.h>
 #include <WiFiClientSecure.h>
+#include <Fonts/TomThumb.h>
+#include <Fonts/FreeSerifBold12pt7b.h>
 #include <DHT.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <AnimatedGIF.h>
@@ -516,6 +518,8 @@ void setup()
   Serial.println("Restart reason: " + String(esp_reset_reason()));
   configure_panel(true);
   boot_message("WIFI!");
+  dma_display->setFont(&TomThumb);
+
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
   {
     Serial.println("STA Failed to configure");
@@ -571,7 +575,7 @@ void draw_dht(int temp, int hum)
   dma_display->setTextColor(myWHITE);
   dma_display->print("T");
   dma_display->setTextColor(myRED);
-  dma_display->printf("%02dC ", temp);
+  dma_display->printf("%02dC", temp);
 
   dma_display->setTextColor(myWHITE);
   dma_display->print("H");
@@ -662,40 +666,80 @@ void GIFDraw(GIFDRAW *pDraw)
   }
 } /* GIFDraw() */
 
-void show_clock(bool night)
+void draw_ram()
 {
+  dma_display->setTextSize(1);
+  dma_display->setTextColor(myGRAY);
+  dma_display->setCursor(30, 8);
+  uint32_t freeHeap = ESP.getFreeHeap();
+  uint32_t totalHeap = ESP.getHeapSize();
+  float freePercent = 100.0 - ((freeHeap * 100.0) / totalHeap);
+  freeHeap = ESP.getFreePsram();
+  totalHeap = ESP.getPsramSize();
+  float psfreePercent = 100.0 - ((freeHeap * 100.0) / totalHeap);
+  dma_display->setTextColor(myWHITE);
+  dma_display->print("R");
+  dma_display->setTextColor(myGRAY);
+  dma_display->printf("%2.f%%", freePercent);
+  dma_display->setTextColor(myWHITE);
+  dma_display->print("P");
+  dma_display->setTextColor(myGRAY);
+  dma_display->printf("%2.f%%\n", psfreePercent);
+}
+
+#define CLOCK_OFFSET_Y 37
+void draw_clock(bool night)
+{
+  const char *days[] = {
+      "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+  const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
   struct tm timeinfo;
   getLocalTime(&timeinfo);
   char buf[9];
   strftime(buf, sizeof(buf), "%H:%M:%S", &timeinfo);
   String time = String(buf);
-  // String time = timeClient.getFormattedTime();
+
+  dma_display->setFont(&FreeSerifBold12pt7b);
+  dma_display->setTextSize(1);
+  dma_display->setCursor(3, CLOCK_OFFSET_Y);
 
   if (night)
   {
 
-    dma_display->setCursor(3, 20);
-    dma_display->setTextSize(2);
     dma_display->setTextColor(myLightGRAY);
     dma_display->print(time.substring(0, 5));
-    dma_display->setCursor(21, 33);
+    dma_display->setCursor(19, CLOCK_OFFSET_Y + 17);
     dma_display->print(time.substring(6, 9));
   }
   else
   {
-    dma_display->setCursor(3, 20);
-    dma_display->setTextSize(2);
     dma_display->setTextColor(myWHITE);
     dma_display->print(time.substring(0, 5));
     dma_display->setTextColor(myGRAY);
-    dma_display->setCursor(21, 33);
+    dma_display->setCursor(19, CLOCK_OFFSET_Y + 17);
     dma_display->print(time.substring(6, 9));
   }
+
+  dma_display->setFont(&TomThumb);
+  dma_display->setTextColor(myWHITE);
+  dma_display->setCursor(3, CLOCK_OFFSET_Y - 16);
+  dma_display->printf("%s, %d %s\n", days[timeinfo.tm_wday], timeinfo.tm_mday, months[timeinfo.tm_mon]);
+}
+
+int round_float(float v)
+{
+  return (int)(v + 0.5f);
 }
 
 // ---- LOOP ----
 void loop()
 {
+
+  static const uint32_t frameDelayMs = 1000 / 100;
+  static uint32_t lastFrameTime = 0;
+  static int someVariableHoldingFPS = 0;
+  static unsigned long lastMillis = 0;
+  static int frames = 0;
   if (POWER_SAVING)
   {
     if (SHOW_CLOCK_ON_SLEEP)
@@ -703,7 +747,7 @@ void loop()
       dma_display->setBrightness8(5);
       unsigned long t_start = millis();
       dma_display->clearScreen();
-      show_clock(true);
+      draw_clock(true);
       dma_display->flipDMABuffer();
       unsigned long t_end = millis();
       unsigned long elapsed = t_end - t_start;
@@ -715,42 +759,68 @@ void loop()
     }
     return;
   }
-  uint32_t t = millis() / 8;
+
+  uint32_t now = millis();
+  if (now - lastFrameTime >= frameDelayMs)
+  {
+    frames++;
+    if (now - lastMillis >= 1000)
+    {
+      someVariableHoldingFPS = frames;
+      frames = 0;
+      lastMillis = now;
+    }
+    lastFrameTime = now;
+  }
+  else
+  {
+    delay(frameDelayMs - (now - lastFrameTime));
+    return;
+  }
+
+  uint32_t t = now / 8;
   uint32_t mode = t % 4096;
-  if (mode > 1024 && !ANIM_ONLY_MODE)
+  if (mode > 1024 && !ANIM_ONLY_MODE || true)
   {
     if (xSemaphoreTake(dht_mutex, pdMS_TO_TICKS(0)) == pdTRUE)
     {
-      uint16_t rgb_color = rainbow565(t % 256);
-      uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
-      int x = t % (dma_display->width() + 10);
-      int x2 = (t + 16) % (dma_display->width() + 10);
+      // uint16_t rgb_color = rainbow565(t % 256);
+      // uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
+      // int x = t % (dma_display->width() + 10);
+      // int x2 = (t + 16) % (dma_display->width() + 10);
 
       dma_display->clearScreen();
       dma_display->setTextSize(1);
       // dma_display->fillRect(31, 0, 2, 64, myWHITE);
-      dma_display->drawRect(0, 0, 64, 64, rgb_color_rect);
-      dma_display->drawRect(1, 1, 62, 62, rgb_color_rect);
-      dma_display->fillCircle(x - 5, 55, 5, rgb_color);
-      dma_display->fillCircle(x2 - 5, 55, 5, rgb_color);
-      dma_display->setCursor(5, 4);
-      draw_dht((int)dht_temperature, (int)dht_humidity);
-      dma_display->setCursor(5, 12);
-      draw_dht((int)dht_2_temperature, (int)dht_2_humidity);
+      // dma_display->drawRect(0, 0, 64, 64, rgb_color_rect);
+      // dma_display->drawRect(1, 1, 62, 62, rgb_color_rect);
+      // dma_display->fillCircle(x - 5, 55, 5, rgb_color);
+      // dma_display->fillCircle(x2 - 5, 55, 5, rgb_color);
+
+      float temp_sum = dht_temperature;
+      float hum_sum = dht_humidity;
+      int count = 1;
+      if (dht_2_temperature >= 0 && dht_2_humidity >= 0)
+      {
+        temp_sum += dht_2_temperature;
+        hum_sum += dht_2_humidity;
+        count = 2;
+      }
+      dma_display->setCursor(3, 14);
+      draw_dht(round_float(temp_sum / count), round_float(hum_sum / count));
+      // dma_display->setCursor(5, 12);
+      // draw_dht((int)dht_2_temperature, (int)dht_2_humidity);
       xSemaphoreGive(dht_mutex);
 
-      show_clock(false);
+      draw_ram();
 
-      dma_display->setTextSize(1);
-      // dma_display->setTextColor(myWHITE);
-      dma_display->setCursor(5, 50);
-      uint32_t freeHeap = ESP.getFreeHeap();
-      uint32_t totalHeap = ESP.getHeapSize();
-      float freePercent = 100.0 - ((freeHeap * 100.0) / totalHeap);
-      freeHeap = ESP.getFreePsram();
-      totalHeap = ESP.getPsramSize();
-      float psfreePercent = 100.0 - ((freeHeap * 100.0) / totalHeap);
-      dma_display->printf("R%2.f%% P%2.f%%\n", freePercent, psfreePercent);
+      dma_display->setCursor(3, 8);
+      dma_display->setTextColor(myWHITE);
+      dma_display->print("FPS");
+      dma_display->setTextColor(myGRAY);
+      dma_display->printf("%d", someVariableHoldingFPS);
+
+      draw_clock(false);
       dma_display->flipDMABuffer();
     }
   }

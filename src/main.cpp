@@ -19,6 +19,16 @@
 #include "esp_pm.h"
 #include "esp_wifi.h"
 
+void log_boot_message(const char *tag, const char *format, ...)
+{
+  va_list args;
+  printf("%s: ", tag);
+  va_start(args, format);
+  vprintf(format, args);
+  va_end(args);
+  printf("\n");
+}
+
 #define PANEL_RES_X 64
 #define PANEL_RES_Y 64
 #define PANEL_CHAIN 1
@@ -70,7 +80,7 @@ void loadGifsFromDir(File dir)
     String path = String(file.path()); // e.g. "/cat/image1.gif"
     if (file.isDirectory())
     {
-      Serial.println("Skipping recursion: " + path);
+      log_boot_message("GIF", "Skipping recursion: %s", path.c_str());
       // loadGifsFromDir(file);
       continue;
     }
@@ -85,21 +95,21 @@ void loadGifsFromDir(File dir)
     }
     else
     {
-      Serial.println(String("Invalid file (no category): ") + path);
+      log_boot_message("GIF", "Invalid file (no category): %s", path.c_str());
       continue;
     }
 
     size_t size = file.size();
     if (size == 0)
     {
-      Serial.println(String("Skipping empty file: ") + path);
+      log_boot_message("GIF", "Skipping empty file: %s", path.c_str());
       continue;
     }
 
     uint8_t *buf = (uint8_t *)ps_malloc(size);
     if (!buf)
     {
-      Serial.println("ps_malloc failed");
+      log_boot_message("GIF", "ps_malloc failed for file: %s", path.c_str());
       file.close();
       return;
     }
@@ -114,7 +124,7 @@ void loadGifsFromDir(File dir)
     PANEL_FRAMES[category].push_back(frame);
     LOADED_ANIMATIONS++;
 
-    Serial.println(String("Loaded: ") + path + " (" + size + " bytes)");
+    log_boot_message("GIF", "Loaded: %s (%d bytes)", path.c_str(), size);
   }
 }
 
@@ -123,7 +133,7 @@ void loadGifsByCategory()
   File root = LittleFS.open("/");
   if (!root || !root.isDirectory())
   {
-    Serial.println("Failed to open root or not a directory");
+    log_boot_message("GIF", "Failed to open root or not a directory");
     return;
   }
 
@@ -177,7 +187,7 @@ float dht_2_humidity = 0;
 void dht_task(void *pvParameters)
 {
   vTaskDelay(pdMS_TO_TICKS(500));
-  Serial.println("Init DHT22");
+  log_boot_message("DHT22", "Init DHT22");
   dht.begin();
   vTaskDelay(pdMS_TO_TICKS(500));
   while (1)
@@ -275,7 +285,7 @@ void restore_clock_and_resume_tasks()
 
 void mqtt_callback(char *topic, byte *payload, unsigned int length)
 {
-  Serial.println("topic: " + String(topic));
+  log_boot_message("MQTT", "Received topic: %s", topic);
   payload[length] = '\0'; // null-terminate
   String val = String((char *)payload);
   if (strcmp(topic, mqtt_brightness_topic) == 0)
@@ -289,7 +299,6 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   }
   else if (strcmp(topic, mqtt_dht_2_topic) == 0)
   {
-    // Serial.println("Updated 2: " + String((char *)payload));
     JsonDocument doc;
     deserializeJson(doc, val);
     xSemaphoreTake(dht_mutex, portMAX_DELAY);
@@ -301,12 +310,12 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   {
     if (val == "off")
     {
-      Serial.println("Entering power save mode");
+      log_boot_message("ESP", "Entering power save mode");
       pause_tasks_and_reduce_clock();
     }
     else
     {
-      Serial.println("Exiting power save mode");
+      log_boot_message("ESP", "Exiting power save mode");
       restore_clock_and_resume_tasks();
     }
   }
@@ -324,10 +333,10 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   }
   else if (strcmp(topic, mqtt_animation_topic) == 0)
   {
-    Serial.println("Received animation: " + val);
+    log_boot_message("GIF", "Setting animation category to: %s", val);
     if (!PANEL_FRAMES.count(val))
     {
-      Serial.println("Received Invalid animation: " + val);
+      log_boot_message("GIF", "Received Invalid animation: %s", val);
     }
     currentFrame = val;
   }
@@ -341,7 +350,7 @@ void mqtt_task(void *pvParameters)
   {
     while (!mqttclient.connected())
     {
-      Serial.println("Reconnecting to mqtt.");
+      log_boot_message("MQTT", "Reconnecting to mqtt.");
       if (mqttclient.connect("ESP32Client", mqtt_user, mqtt_pass))
       {
         assert(mqttclient.subscribe("home/esp1/#"));
@@ -351,7 +360,7 @@ void mqtt_task(void *pvParameters)
           mqttclient.publish(mqtt_brightness_topic, String(DEFAULT_BRIGHTNESS).c_str(), true);
           assert(mqttclient.subscribe(mqtt_brightness_topic));
         }
-        Serial.println("Connected to MQTT.");
+        log_boot_message("MQTT", "Connected to mqtt.");
         break;
       };
       vTaskDelay(pdMS_TO_TICKS(1000));
@@ -397,7 +406,7 @@ void mqtt_publish(void *pvParameters)
 
 void boot_message(String message)
 {
-  Serial.println("BOOT: " + message);
+  log_boot_message("ESP", "BOOT: %s", message);
   static String lines[MAX_LINES];
   static int index = 0;
   static int count = 0;
@@ -521,30 +530,29 @@ void configure_panel(bool double_buff)
 void setup()
 {
   Serial.begin(115200);
-  Serial.println("Restart reason: " + String(esp_reset_reason()));
   configure_panel(true);
+
   boot_message("WIFI!");
   dma_display->setFont(&TomThumb);
 
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
   {
-    Serial.println("STA Failed to configure");
+    log_boot_message("ESP", "STA Failed to configure");
   }
   WiFi.begin(ssid, password);
   WiFi.setAutoReconnect(true);
   boot_message("LittleFS!");
   if (!LittleFS.begin(false))
   {
-    Serial.println("An Error has occurred while mounting SPIFFS");
+    log_boot_message("ESP", "An Error has occurred while mounting SPIFFS");
   }
 
   while (WiFi.status() != WL_CONNECTED)
   {
     delay(500);
-    Serial.print("Wifi.");
+    log_boot_message("ESP", "Connecting to WIFI");
   }
   boot_message("WIFI OK!");
-  // Serial.println("Connected!");
   // TODO: Fix the cert
   // espClient.setCACert(CA_CERT);
   espClient.setInsecure();
@@ -570,7 +578,7 @@ void setup()
   GIF_BUFFER = (uint16_t *)ps_malloc(64 * 64 * 2);
   if (!GIF_BUFFER)
   {
-    Serial.println("ps_malloc failed");
+    log_boot_message("GIF", "ps_malloc failed for GIF BUFFER");
     return;
   }
   memset(GIF_BUFFER, 0, 64 * 64 * 2);
@@ -850,7 +858,7 @@ void loop()
     {
       played_gif = 0;
     }
-    Serial.println("Playing gif: " + currentFrame + ", ID: " + played_gif);
+    log_boot_message("GIF", "Playing gif: %s, ID: %d", currentFrame.c_str(), played_gif);
     gif.open(myframes[played_gif].data, myframes[played_gif].size, GIFDraw);
 
     int frameDelay = 0; // store delay for the last frame

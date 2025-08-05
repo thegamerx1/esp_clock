@@ -727,8 +727,8 @@ void draw_clock(bool night)
 
     dma_display->setTextColor(myLightGRAY);
     dma_display->print(time.substring(0, 5));
-    dma_display->setCursor(20, CLOCK_OFFSET_Y + 17);
-    dma_display->print(time.substring(6, 9));
+    // dma_display->setCursor(20, CLOCK_OFFSET_Y + 17);
+    // dma_display->print(time.substring(6, 9));
   }
   else
   {
@@ -770,7 +770,8 @@ void loop()
       dma_display->flipDMABuffer();
       unsigned long t_end = millis();
       unsigned long elapsed = t_end - t_start;
-      delay(1000 - min(elapsed, 1000UL));
+      // delay(1000 - min(elapsed, 1000UL));
+      delay(5000);
     }
     else
     {

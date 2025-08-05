@@ -504,9 +504,9 @@ void configure_panel(bool double_buff)
   myWHITE = dma_display->color565(255, 255, 255);
   myGRAY = dma_display->color565(128, 128, 128);
   myLightGRAY = dma_display->color565(50, 50, 50);
-  myRED = dma_display->color565(255, 0, 0);
+  myRED = dma_display->color565(242, 20, 20);
   myGREEN = dma_display->color565(0, 255, 0);
-  myBLUE = dma_display->color565(0, 0, 255);
+  myBLUE = dma_display->color565(0, 128, 255);
 
   dma_display->begin();
   dma_display->clearScreen();
@@ -676,7 +676,6 @@ void draw_ram()
 {
   dma_display->setTextSize(1);
   dma_display->setTextColor(myGRAY);
-  dma_display->setCursor(30, 8);
   uint32_t freeHeap = ESP.getFreeHeap();
   uint32_t totalHeap = ESP.getHeapSize();
   float freePercent = 100.0 - ((freeHeap * 100.0) / totalHeap);
@@ -693,7 +692,7 @@ void draw_ram()
   dma_display->printf("%2.f%%\n", psfreePercent);
 }
 
-#define CLOCK_OFFSET_Y 37
+#define CLOCK_OFFSET_Y 32
 void draw_clock(bool night)
 {
   const char *days[] = {
@@ -707,14 +706,14 @@ void draw_clock(bool night)
 
   dma_display->setFont(&FreeSerifBold12pt7b);
   dma_display->setTextSize(1);
-  dma_display->setCursor(3, CLOCK_OFFSET_Y);
+  dma_display->setCursor(4, CLOCK_OFFSET_Y);
 
   if (night)
   {
 
     dma_display->setTextColor(myLightGRAY);
     dma_display->print(time.substring(0, 5));
-    dma_display->setCursor(19, CLOCK_OFFSET_Y + 17);
+    dma_display->setCursor(20, CLOCK_OFFSET_Y + 17);
     dma_display->print(time.substring(6, 9));
   }
   else
@@ -722,12 +721,12 @@ void draw_clock(bool night)
     dma_display->setTextColor(myWHITE);
     dma_display->print(time.substring(0, 5));
     dma_display->setTextColor(myGRAY);
-    dma_display->setCursor(19, CLOCK_OFFSET_Y + 17);
+    dma_display->setCursor(20, CLOCK_OFFSET_Y + 17);
     dma_display->print(time.substring(6, 9));
+    dma_display->setTextColor(myWHITE);
   }
 
   dma_display->setFont(&TomThumb);
-  dma_display->setTextColor(myWHITE);
   dma_display->setCursor(3, CLOCK_OFFSET_Y - 16);
   dma_display->printf("%s, %d %s\n", days[timeinfo.tm_wday], timeinfo.tm_mday, months[timeinfo.tm_mon]);
 }
@@ -791,14 +790,18 @@ void loop()
     if (xSemaphoreTake(dht_mutex, pdMS_TO_TICKS(0)) == pdTRUE)
     {
       // uint16_t rgb_color = rainbow565(t % 256);
-      // uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
+      uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
       // int x = t % (dma_display->width() + 10);
       // int x2 = (t + 16) % (dma_display->width() + 10);
 
       dma_display->clearScreen();
+
       dma_display->setTextSize(1);
+      // CENTER LINE
       // dma_display->fillRect(31, 0, 2, 64, myWHITE);
-      // dma_display->drawRect(0, 0, 64, 64, rgb_color_rect);
+
+      // RGB BORDER
+      dma_display->drawRect(0, 0, 64, 64, rgb_color_rect);
       // dma_display->drawRect(1, 1, 62, 62, rgb_color_rect);
       // dma_display->fillCircle(x - 5, 55, 5, rgb_color);
       // dma_display->fillCircle(x2 - 5, 55, 5, rgb_color);
@@ -812,15 +815,16 @@ void loop()
         hum_sum += dht_2_humidity;
         count = 2;
       }
-      dma_display->setCursor(3, 14);
+      dma_display->setCursor(3, 7);
       draw_dht(round_float(temp_sum / count), round_float(hum_sum / count));
       // dma_display->setCursor(5, 12);
       // draw_dht((int)dht_2_temperature, (int)dht_2_humidity);
       xSemaphoreGive(dht_mutex);
 
+      dma_display->setCursor(31, 62);
       draw_ram();
 
-      dma_display->setCursor(3, 8);
+      dma_display->setCursor(3, 62);
       dma_display->setTextColor(myWHITE);
       dma_display->print("FPS");
       dma_display->setTextColor(myGRAY);

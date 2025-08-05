@@ -207,11 +207,11 @@ void dht_task(void *pvParameters)
     }
     if (POWER_SAVING)
     {
-      vTaskDelay(pdMS_TO_TICKS(10000));
+      vTaskDelay(pdMS_TO_TICKS(60000));
     }
     else
     {
-      vTaskDelay(pdMS_TO_TICKS(4000));
+      vTaskDelay(pdMS_TO_TICKS(15000));
     }
   }
 }
@@ -399,16 +399,16 @@ void mqtt_publish(void *pvParameters)
     }
     if (POWER_SAVING)
     {
-      vTaskDelay(pdMS_TO_TICKS(15000));
+      vTaskDelay(pdMS_TO_TICKS(61000));
     }
     else
     {
-      vTaskDelay(pdMS_TO_TICKS(5000));
+      vTaskDelay(pdMS_TO_TICKS(16000));
     }
   }
 }
 
-#define MAX_LINES 7
+#define MAX_LINES 10
 
 void boot_message(String message)
 {

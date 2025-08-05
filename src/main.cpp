@@ -756,6 +756,11 @@ void loop()
   }
   else
   {
+    dma_display->clearScreen();
+    dma_display->flipDMABuffer();
+
+    memset(GIF_BUFFER, 0, 64 * 64 * 2);
+
     auto &myframes = PANEL_FRAMES[currentFrame];
     if (myframes.empty())
     {
@@ -787,7 +792,7 @@ void loop()
       dma_display->setTextColor(myWHITE);
       dma_display->setCursor(0, 53);
       // dma_display->println("Ander");
-      dma_display->println("Darkity.top");
+      // dma_display->println("Darkity.top");
       dma_display->flipDMABuffer();
 
       then += frameDelay;
@@ -797,8 +802,6 @@ void loop()
         break;
       }
     }
-
-    memset(GIF_BUFFER, 0, 64 * 64 * 2);
 
     gif.close();
     played_gif++;

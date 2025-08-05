@@ -166,6 +166,7 @@ const char *mqtt_animation_topic = "home/esp1/animation";
 const char *mqtt_power_topic = "home/esp1/power";
 const char *mqtt_show_clock_on_sleep_topic = "home/esp1/show_clock_on_sleep";
 const char *mqtt_animonly_topic = "home/esp1/animonly";
+const char *mqtt_rgbborder_topic = "home/esp1/rgbborder";
 const char *mqtt_disable_anims_topic = "home/esp1/animdisable";
 const char *mqtt_dht_topic = "home/esp1/dht22";
 const char *mqtt_dht_2_topic = "home/rpi/dht22";
@@ -173,6 +174,7 @@ const char *mqtt_dht_2_topic = "home/rpi/dht22";
 #define DHTPIN 39
 #define DHTTYPE DHT22
 bool ANIM_DISABLE = false;
+bool ANIM_RGBBORDER = false;
 bool ANIM_ONLY_MODE = false;
 bool SHOW_CLOCK_ON_SLEEP = false;
 
@@ -322,6 +324,10 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   else if (strcmp(topic, mqtt_animonly_topic) == 0)
   {
     ANIM_ONLY_MODE = (val == "on");
+  }
+  else if (strcmp(topic, mqtt_rgbborder_topic) == 0)
+  {
+    ANIM_RGBBORDER = (val == "on");
   }
   else if (strcmp(topic, mqtt_disable_anims_topic) == 0)
   {
@@ -797,19 +803,22 @@ void loop()
   {
     if (xSemaphoreTake(dht_mutex, pdMS_TO_TICKS(0)) == pdTRUE)
     {
-      // uint16_t rgb_color = rainbow565(t % 256);
-      uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
-      // int x = t % (dma_display->width() + 10);
-      // int x2 = (t + 16) % (dma_display->width() + 10);
-
       dma_display->clearScreen();
 
       dma_display->setTextSize(1);
+      // uint16_t rgb_color = rainbow565(t % 256);
+      // int x = t % (dma_display->width() + 10);
+      // int x2 = (t + 16) % (dma_display->width() + 10);
+
       // CENTER LINE
       // dma_display->fillRect(31, 0, 2, 64, myWHITE);
 
       // RGB BORDER
-      dma_display->drawRect(0, 0, 64, 64, rgb_color_rect);
+      if (ANIM_RGBBORDER)
+      {
+        uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
+        dma_display->drawRect(0, 0, 64, 64, rgb_color_rect);
+      }
       // dma_display->drawRect(1, 1, 62, 62, rgb_color_rect);
       // dma_display->fillCircle(x - 5, 55, 5, rgb_color);
       // dma_display->fillCircle(x2 - 5, 55, 5, rgb_color);

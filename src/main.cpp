@@ -66,7 +66,9 @@ MatrixPanel_I2S_DMA *dma_display = nullptr;
 uint16_t myBLACK, myWHITE, myRED, myGREEN, myBLUE, myGRAY, myLightGRAY;
 uint16_t *GIF_BUFFER;
 uint8_t PANEL_BRIGHTNESS;
+bool POWER_MODE = true;
 bool POWER_SAVING = false;
+bool activated_power_save = false;
 
 AnimatedGIF gif;
 void loadGifsFromDir(File dir)
@@ -176,7 +178,7 @@ const char *mqtt_dht_2_topic = "home/rpi/dht22";
 bool ANIM_DISABLE = false;
 bool ANIM_RGBBORDER = false;
 bool ANIM_ONLY_MODE = false;
-bool SHOW_CLOCK_ON_SLEEP = false;
+bool SLEEP_CLOCK = false;
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -241,6 +243,8 @@ TaskHandle_t task_handles[MAX_TASKS] = {NULL};
 
 void pause_tasks_and_reduce_clock()
 {
+  log_boot_message("ESP", "Entering power save mode");
+
   for (int i = 0; i < MAX_TASKS; i++)
   {
     if (task_handles[i] != NULL)
@@ -259,11 +263,13 @@ void pause_tasks_and_reduce_clock()
 
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
   POWER_SAVING = true;
+  activated_power_save = false;
   dma_display->setBrightness(0);
 }
 
 void restore_clock_and_resume_tasks()
 {
+  log_boot_message("ESP", "Exiting power save mode");
   // Restore CPU frequency to 240MHz
   esp_pm_config_esp32s3_t pm_config = {
       .max_freq_mhz = 240,
@@ -274,6 +280,7 @@ void restore_clock_and_resume_tasks()
 
   esp_wifi_set_ps(WIFI_PS_NONE);
   POWER_SAVING = false;
+  activated_power_save = false;
 
   for (int i = 0; i < MAX_TASKS; i++)
   {
@@ -310,16 +317,16 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   }
   else if (strcmp(topic, mqtt_power_topic) == 0)
   {
-    if (val == "off")
+    POWER_MODE = (val == "on");
+    if (POWER_MODE && !SLEEP_CLOCK)
     {
-      log_boot_message("ESP", "Entering power save mode");
-      pause_tasks_and_reduce_clock();
+      restore_clock_and_resume_tasks();
     }
     else
     {
-      log_boot_message("ESP", "Exiting power save mode");
-      restore_clock_and_resume_tasks();
+      pause_tasks_and_reduce_clock();
     }
+    activated_power_save = false;
   }
   else if (strcmp(topic, mqtt_animonly_topic) == 0)
   {
@@ -335,7 +342,16 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   }
   else if (strcmp(topic, mqtt_show_clock_on_sleep_topic) == 0)
   {
-    SHOW_CLOCK_ON_SLEEP = (val == "on");
+    SLEEP_CLOCK = (val == "on");
+    if (SLEEP_CLOCK)
+    {
+      pause_tasks_and_reduce_clock();
+    }
+    else if (POWER_MODE)
+    {
+      restore_clock_and_resume_tasks();
+    }
+    activated_power_save = false;
   }
   else if (strcmp(topic, mqtt_animation_topic) == 0)
   {
@@ -759,24 +775,30 @@ void loop()
   static int someVariableHoldingFPS = 0;
   static unsigned long lastMillis = 0;
   static int frames = 0;
-  if (POWER_SAVING)
+
+  if (POWER_SAVING && !activated_power_save)
   {
-    if (SHOW_CLOCK_ON_SLEEP)
-    {
-      dma_display->setBrightness8(5);
-      unsigned long t_start = millis();
-      dma_display->clearScreen();
-      draw_clock(true);
-      dma_display->flipDMABuffer();
-      unsigned long t_end = millis();
-      unsigned long elapsed = t_end - t_start;
-      // delay(1000 - min(elapsed, 1000UL));
-      delay(5000);
-    }
-    else
-    {
-      delay(5000);
-    }
+    dma_display->clearScreen();
+    dma_display->setBrightness8(0);
+    activated_power_save = true;
+  }
+  if (!POWER_MODE)
+  {
+    delay(10000);
+    return;
+  }
+
+  if (SLEEP_CLOCK)
+  {
+    dma_display->setBrightness8(5);
+    unsigned long t_start = millis();
+    dma_display->clearScreen();
+    draw_clock(true);
+    dma_display->flipDMABuffer();
+    unsigned long t_end = millis();
+    unsigned long elapsed = t_end - t_start;
+    // delay(1000 - min(elapsed, 1000UL));
+    delay(5000);
     return;
   }
 

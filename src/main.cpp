@@ -758,12 +758,7 @@ void draw_clock(bool night)
 
   dma_display->setFont(&TomThumb);
   dma_display->setCursor(3, CLOCK_OFFSET_Y - 16);
-  dma_display->printf("%s, %d %s\n", days[timeinfo.tm_wday], timeinfo.tm_mday, months[timeinfo.tm_mon]);
-}
-
-int round_float(float v)
-{
-  return (int)(v + 0.5f);
+  dma_display->printf("%s, %d %s\n", DAYS[timeinfo.tm_wday - 1], timeinfo.tm_mday, MONTHS[timeinfo.tm_mon]);
 }
 
 // ---- LOOP ----

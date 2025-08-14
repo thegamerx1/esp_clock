@@ -6,6 +6,10 @@ An ESP32-S3 project for controlling a HUB75 LED matrix panel, connected to WiFi,
 | -------------------------------- | -------------------------------- |
 | ![LED Panel](images/image0.webp) | ![LED Panel](images/image1.webp) |
 
+| Dual Panel                     |
+| ------------------------------ |
+| ![LED Panel](images/dual.webp) |
+
 ## Features
 
 -  **HUB75 LED Matrix Panel**: 64x64 RGB LED panel driven via [ESP32-HUB75-MatrixPanel-DMA](https://github.com/mrcodetastic/ESP32-HUB75-MatrixPanel-DMA) library.
@@ -13,6 +17,7 @@ An ESP32-S3 project for controlling a HUB75 LED matrix panel, connected to WiFi,
 -  **NTP Time Sync**: Accurate real-time clock synced via NTP.
 -  **DHT22 Temperature & Humidity Sensor**: Displays live sensor readings and upload via MQTT.
 -  **MQTT Integration**: Control brightness, animations, power saving, and more remotely.
+-  **Calendar**: Displays holidays and events.
 
 ## Requirements
 

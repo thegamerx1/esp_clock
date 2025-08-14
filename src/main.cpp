@@ -18,20 +18,21 @@
 #include <String.h>
 #include "esp_pm.h"
 #include "esp_wifi.h"
+#include "utils.h"
 
-void log_boot_message(const char *tag, const char *format, ...)
-{
-  va_list args;
-  printf("%s: ", tag);
-  va_start(args, format);
-  vprintf(format, args);
-  va_end(args);
-  printf("\n");
-}
+#define NTP_SERVER "212.230.255.2"
+#define MY_TIMEZONE "CET-1CEST,M3.5.0,M10.5.0/3"
+#define MAX_TASKS 6
 
+// ---- PANEL CONFIG ----
 #define PANEL_RES_X 64
 #define PANEL_RES_Y 64
-#define PANEL_CHAIN 1
+#define PANEL_CHAIN 2
+
+#if PANEL_CHAIN == 2
+#define PANEL_DUAL 1
+#endif
+
 #define DEFAULT_BRIGHTNESS 5
 #define R1_PIN 4
 #define G1_PIN 5
@@ -48,17 +49,15 @@ void log_boot_message(const char *tag, const char *format, ...)
 #define OE_PIN 2
 #define CLK_PIN 41
 #define FRAME_COUNT 32
+
+#define DHTPIN 39
+#define DHTTYPE DHT22
+
 // #define FRAME_SIZE (PANEL_RES_X * PANEL_RES_Y)
 // #define FRAME_BYTES (FRAME_SIZE * 2)
 const int maxGifDuration = 30000; // ms, max GIF duration
 int LOADED_ANIMATIONS = 0;
 int played_gif = 0;
-struct Frame
-{
-  uint8_t *data = nullptr;
-  size_t size = 0;
-};
-
 std::map<String, std::vector<Frame>> PANEL_FRAMES;
 String currentFrame = "pharmacy";
 
@@ -71,6 +70,53 @@ bool POWER_SAVING = false;
 bool activated_power_save = false;
 
 AnimatedGIF gif;
+
+// ---- CONFIG ----
+const char *ssid = WIFI_SSID;
+const char *password = WIFI_PASS;
+
+IPAddress local_IP(192, 168, 25, 55);
+IPAddress gateway(192, 168, 25, 1);
+IPAddress subnet(255, 255, 255, 0);
+IPAddress primaryDNS(192, 168, 25, 71);
+IPAddress secondaryDNS(8, 8, 4, 4);
+
+const char *mqtt_server = MQTT_SERVER;
+const int mqtt_port = 8883;
+const char *mqtt_user = MQTT_USER;
+const char *mqtt_pass = MQTT_PASS;
+
+const char *mqtt_brightness_topic = "home/esp1/brightness";
+const char *mqtt_animation_topic = "home/esp1/animation";
+const char *mqtt_power_topic = "home/esp1/power";
+const char *mqtt_show_clock_on_sleep_topic = "home/esp1/show_clock_on_sleep";
+const char *mqtt_animonly_topic = "home/esp1/animonly";
+const char *mqtt_rgbborder_topic = "home/esp1/rgbborder";
+const char *mqtt_disable_anims_topic = "home/esp1/animdisable";
+const char *mqtt_calendar_topic = "home/esp1/calendar";
+const char *mqtt_dht_topic = "home/esp1/dht22";
+const char *mqtt_dht_2_topic = "home/rpi/dht22";
+
+std::map<uint8_t, uint16_t> day_colors; // day -> RGB565 color
+
+bool ANIM_DISABLE = false;
+bool ANIM_RGBBORDER = false;
+bool ANIM_ONLY_MODE = false;
+bool SLEEP_CLOCK = false;
+
+DHT dht(DHTPIN, DHTTYPE);
+
+SemaphoreHandle_t dht_mutex;
+float dht_temperature = 0;
+float dht_humidity = 0;
+float dht_2_temperature = 0;
+float dht_2_humidity = 0;
+
+WiFiClientSecure espClient;
+WiFiUDP espUdpClient;
+PubSubClient mqttclient(espClient);
+TaskHandle_t task_handles[MAX_TASKS] = {NULL};
+
 void loadGifsFromDir(File dir)
 {
   while (true)
@@ -148,46 +194,6 @@ void loadGifsByCategory()
   }
 }
 
-// ---- CONFIG ----
-const char *ssid = WIFI_SSID;
-const char *password = WIFI_PASS;
-
-IPAddress local_IP(192, 168, 25, 55);
-IPAddress gateway(192, 168, 25, 1);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress primaryDNS(192, 168, 25, 71);
-IPAddress secondaryDNS(8, 8, 4, 4);
-
-const char *mqtt_server = MQTT_SERVER;
-const int mqtt_port = 8883;
-const char *mqtt_user = MQTT_USER;
-const char *mqtt_pass = MQTT_PASS;
-
-const char *mqtt_brightness_topic = "home/esp1/brightness";
-const char *mqtt_animation_topic = "home/esp1/animation";
-const char *mqtt_power_topic = "home/esp1/power";
-const char *mqtt_show_clock_on_sleep_topic = "home/esp1/show_clock_on_sleep";
-const char *mqtt_animonly_topic = "home/esp1/animonly";
-const char *mqtt_rgbborder_topic = "home/esp1/rgbborder";
-const char *mqtt_disable_anims_topic = "home/esp1/animdisable";
-const char *mqtt_dht_topic = "home/esp1/dht22";
-const char *mqtt_dht_2_topic = "home/rpi/dht22";
-
-#define DHTPIN 39
-#define DHTTYPE DHT22
-bool ANIM_DISABLE = false;
-bool ANIM_RGBBORDER = false;
-bool ANIM_ONLY_MODE = false;
-bool SLEEP_CLOCK = false;
-
-DHT dht(DHTPIN, DHTTYPE);
-
-SemaphoreHandle_t dht_mutex;
-float dht_temperature = 0;
-float dht_humidity = 0;
-float dht_2_temperature = 0;
-float dht_2_humidity = 0;
-
 void dht_task(void *pvParameters)
 {
   vTaskDelay(pdMS_TO_TICKS(500));
@@ -218,29 +224,6 @@ void dht_task(void *pvParameters)
   }
 }
 
-WiFiClientSecure espClient;
-WiFiUDP espUdpClient;
-
-#define NTP_SERVER "212.230.255.2"
-
-// NTPClient timeClient(espUdpClient, NTP_SERVER, 0, 240000);
-// void ntp_task(void *pvParameters)
-// {
-//   timeClient.begin();
-//   vTaskDelay(pdMS_TO_TICKS(100));
-//   while (1)
-//   {
-//     timeClient.update();
-//     vTaskDelay(pdMS_TO_TICKS(5000));
-//   }
-// }
-
-PubSubClient mqttclient(espClient);
-
-#define MAX_TASKS 6
-
-TaskHandle_t task_handles[MAX_TASKS] = {NULL};
-
 void pause_tasks_and_reduce_clock()
 {
   log_boot_message("ESP", "Entering power save mode");
@@ -257,8 +240,7 @@ void pause_tasks_and_reduce_clock()
   esp_pm_config_esp32s3_t pm_config = {
       .max_freq_mhz = 80,
       .min_freq_mhz = 80,
-      .light_sleep_enable = true // enable light sleep
-  };
+      .light_sleep_enable = true};
   esp_pm_configure(&pm_config);
 
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
@@ -278,7 +260,7 @@ void restore_clock_and_resume_tasks()
 
   esp_pm_configure(&pm_config);
 
-  esp_wifi_set_ps(WIFI_PS_NONE);
+  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
   POWER_SAVING = false;
   activated_power_save = false;
 
@@ -332,6 +314,23 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   {
     ANIM_ONLY_MODE = (val == "on");
   }
+  else if (strcmp(topic, mqtt_calendar_topic) == 0)
+  {
+    Serial.println("Got calendar");
+    Serial.println(val);
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, payload, length);
+    if (err)
+      return;
+
+    JsonObject colors = doc["colors"];
+    for (JsonPair p : colors)
+    {
+      uint8_t day = atoi(p.key().c_str());
+      uint16_t color = p.value().as<uint16_t>();
+      day_colors[day] = color;
+    }
+  }
   else if (strcmp(topic, mqtt_rgbborder_topic) == 0)
   {
     ANIM_RGBBORDER = (val == "on");
@@ -377,6 +376,7 @@ void mqtt_task(void *pvParameters)
       {
         assert(mqttclient.subscribe("home/esp1/#"));
         assert(mqttclient.subscribe(mqtt_dht_2_topic));
+        mqttclient.unsubscribe(mqtt_dht_topic);
         if (!mqttclient.subscribe(mqtt_brightness_topic))
         {
           mqttclient.publish(mqtt_brightness_topic, String(DEFAULT_BRIGHTNESS).c_str(), true);
@@ -424,99 +424,33 @@ void mqtt_publish(void *pvParameters)
   }
 }
 
-#define MAX_LINES 10
-
+#define MAX_BOOT_LINES 10
 void boot_message(String message)
 {
   log_boot_message("ESP", "BOOT: %s", message);
-  static String lines[MAX_LINES];
+  static String lines[MAX_BOOT_LINES];
   static int index = 0;
   static int count = 0;
 
-  lines[index] = message;          // Add new message at current index
-  index = (index + 1) % MAX_LINES; // Move index, wrap around
-  if (count < MAX_LINES)
+  lines[index] = message;               // Add new message at current index
+  index = (index + 1) % MAX_BOOT_LINES; // Move index, wrap around
+  if (count < MAX_BOOT_LINES)
     count++; // Keep track of how many lines stored
 
   dma_display->clearScreen();
   dma_display->setCursor(0, 0);
 
-  int start = (count == MAX_LINES) ? index : 0; // Start printing from oldest line
+  int start = (count == MAX_BOOT_LINES) ? index : 0; // Start printing from oldest line
   for (int i = 0; i < count; i++)
   {
-    int lineIndex = (start + i) % MAX_LINES;
+    int lineIndex = (start + i) % MAX_BOOT_LINES;
     dma_display->println(lines[lineIndex]);
   }
   dma_display->flipDMABuffer();
 }
 
-uint16_t
-rainbow565(uint8_t pos)
-{
-  uint8_t r, g, b;
-  if (pos < 85)
-  {
-    r = 255 - pos * 3;
-    g = pos * 3;
-    b = 0;
-  }
-  else if (pos < 170)
-  {
-    pos -= 85;
-    r = 0;
-    g = 255 - pos * 3;
-    b = pos * 3;
-  }
-  else
-  {
-    pos -= 170;
-    r = pos * 3;
-    g = 0;
-    b = 255 - pos * 3;
-  }
-  return dma_display->color565(r, g, b); // <-- return RGB565 color
-}
-
-void test_screen()
-{
-  // fix the screen with green
-  dma_display->clearScreen();
-  dma_display->fillRect(0, 0, dma_display->width(), dma_display->height(), dma_display->color444(0, 15, 0));
-  // dma_display->flipDMABuffer();
-  delay(250);
-
-  // draw a box in yellow
-  dma_display->clearScreen();
-  dma_display->drawRect(0, 0, dma_display->width(), dma_display->height(), dma_display->color444(15, 15, 0));
-  // dma_display->flipDMABuffer();
-  delay(250);
-
-  // draw an 'X' in red
-  dma_display->drawLine(0, 0, dma_display->width() - 1, dma_display->height() - 1, dma_display->color444(15, 0, 0));
-  dma_display->drawLine(dma_display->width() - 1, 0, 0, dma_display->height() - 1, dma_display->color444(15, 0, 0));
-  // dma_display->flipDMABuffer();
-  delay(250);
-
-  // draw a blue circle
-  dma_display->drawCircle(10, 10, 10, dma_display->color444(0, 0, 15));
-  // dma_display->flipDMABuffer();
-  delay(250);
-
-  // fill a violet circle
-  dma_display->fillCircle(40, 21, 10, dma_display->color444(15, 0, 15));
-  // dma_display->flipDMABuffer();
-  delay(250);
-  delay(1000);
-}
-
 void configure_panel(bool double_buff)
 {
-  // if (dma_display)
-  // {
-  //   delete dma_display;
-  //   dma_display = nullptr;
-  // }
-
   HUB75_I2S_CFG::i2s_pins _pins = {G1_PIN, B1_PIN, R1_PIN, G2_PIN, B2_PIN, R2_PIN, A_PIN, B_PIN, C_PIN, D_PIN, E_PIN, LAT_PIN, OE_PIN, CLK_PIN};
   HUB75_I2S_CFG mxconfig(
       PANEL_RES_X, // module width
@@ -525,8 +459,8 @@ void configure_panel(bool double_buff)
       _pins);
 
   mxconfig.double_buff = double_buff;
-  // mxconfig.latch_blanking = 2;
   mxconfig.clkphase = false;
+  // mxconfig.latch_blanking = 2;
   // mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
 
   // Display Setup
@@ -586,7 +520,7 @@ void setup()
   xTaskCreate(mqtt_task, "mqtt_task", 16384, NULL, 5, NULL);
   xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 5, NULL);
   // xTaskCreate(ntp_task, "ntp_task", 4096, NULL, 5, &task_handles[0]);
-  configTzTime("CET-1CEST,M3.5.0,M10.5.0/3", NTP_SERVER);
+  configTzTime(MY_TIMEZONE, NTP_SERVER);
   // boot_message("TEST SCREEN!");
   // test_screen();
   boot_message("OK!");
@@ -722,12 +656,82 @@ void draw_ram()
   dma_display->printf("%2.f%%\n", psfreePercent);
 }
 
+#define CALENDAR_OFFSET_X 64
+#define CALENDAR_OFFSET_Y 24
+#define CALENDAR_CELL_W 9
+#define CALENDAR_CELL_H 8
+void draw_calendar()
+{
+  static bool blinkState = false;
+  static unsigned long lastBlink = 0;
+  const unsigned long blinkInterval = 1000;
+
+  struct tm timeinfo;
+  getLocalTime(&timeinfo);
+
+  dma_display->setCursor(CALENDAR_OFFSET_X, CALENDAR_OFFSET_Y);
+  // dma_display->print("Calendar");
+
+  int year = timeinfo.tm_year + 1900;
+  int month = timeinfo.tm_mon + 1;
+
+  int days = days_in_month(year, month);
+  int start = first_weekday_of_month(year, month);
+
+  dma_display->setTextSize(1);
+
+  int day = 1;
+  int row = 0;
+  int col = start;
+
+  while (day <= days)
+  {
+    int x = CALENDAR_OFFSET_X + col * CALENDAR_CELL_W;
+    int y = CALENDAR_OFFSET_Y + row * CALENDAR_CELL_H;
+
+    dma_display->setTextColor(myWHITE);
+    dma_display->setCursor(x + 1, y + 6);
+    uint16_t textColor = myWHITE;
+    if (day_colors.count(day))
+    {
+      dma_display->fillRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, day_colors[day]);
+      textColor = useBlackText(day_colors[day]) ? myBLACK : myWHITE;
+    }
+    if (timeinfo.tm_mday == day)
+    {
+      unsigned long now = millis();
+      if (now - lastBlink >= blinkInterval)
+      {
+        blinkState = !blinkState;
+        lastBlink = now;
+      }
+
+      uint16_t color = blinkState ? myRED : myGRAY;
+      dma_display->drawRoundRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, 2, color);
+    }
+    if (col >= 5)
+    {
+      dma_display->setTextColor(myGRAY);
+    }
+    else
+    {
+      dma_display->setTextColor(textColor);
+    }
+    dma_display->print(day);
+
+    col++;
+    if (col >= 7)
+    {
+      col = 0;
+      row++;
+    }
+    day++;
+  }
+}
+
 #define CLOCK_OFFSET_Y 32
 void draw_clock(bool night)
 {
-  const char *days[] = {
-      "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-  const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
   struct tm timeinfo;
   getLocalTime(&timeinfo);
   char buf[9];
@@ -835,7 +839,7 @@ void loop()
       if (ANIM_RGBBORDER)
       {
         uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
-        dma_display->drawRect(0, 0, 64, 64, rgb_color_rect);
+        dma_display->drawRect(0, 0, PANEL_RES_X * PANEL_CHAIN, PANEL_RES_Y, rgb_color_rect);
       }
       // dma_display->drawRect(1, 1, 62, 62, rgb_color_rect);
       // dma_display->fillCircle(x - 5, 55, 5, rgb_color);
@@ -866,6 +870,12 @@ void loop()
       dma_display->printf("%d", someVariableHoldingFPS);
 
       draw_clock(false);
+
+      if (PANEL_DUAL)
+      {
+        draw_calendar();
+      }
+
       dma_display->flipDMABuffer();
     }
   }

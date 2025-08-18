@@ -1,8 +1,6 @@
 #include "secrets.h"
-#include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include <WiFiUdp.h>
 #include <LittleFS.h>
 #include <WiFiClientSecure.h>
 #include <Fonts/TomThumb.h>
@@ -113,7 +111,6 @@ float dht_2_temperature = 0;
 float dht_2_humidity = 0;
 
 WiFiClientSecure espClient;
-WiFiUDP espUdpClient;
 PubSubClient mqttclient(espClient);
 TaskHandle_t task_handles[MAX_TASKS] = {NULL};
 
@@ -656,8 +653,8 @@ void draw_ram()
   dma_display->printf("%2.f%%\n", psfreePercent);
 }
 
-#define CALENDAR_OFFSET_X 64
-#define CALENDAR_OFFSET_Y 24
+#define CALENDAR_OFFSET_X 65
+#define CALENDAR_OFFSET_Y 13
 #define CALENDAR_CELL_W 9
 #define CALENDAR_CELL_H 8
 void draw_calendar()

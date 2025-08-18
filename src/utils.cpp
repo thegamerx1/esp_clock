@@ -130,3 +130,26 @@ bool useBlackText(uint16_t color565)
 	// same decision rule as yours (bright => black)
 	return lum > 128;
 }
+
+uint16_t brightenDown(uint16_t color)
+{
+	uint8_t r5 = (color >> 11) & 0x1F;
+	uint8_t g6 = (color >> 5) & 0x3F;
+	uint8_t b5 = color & 0x1F;
+
+	// CHANGED: map 8-bit minimum 40 -> 5/6-bit equivalents (rounded)
+	// 40 * 31 / 255 ≈ 4.86 -> 5 ; 40 * 63 / 255 ≈ 9.88 -> 10
+	const uint8_t R_MIN = (40 * 31 + 127) / 255; // == 5
+	const uint8_t G_MIN = (40 * 63 + 127) / 255; // == 10
+	const uint8_t B_MIN = (40 * 31 + 127) / 255; // == 5
+
+	while (r5 > R_MIN && g6 > G_MIN && b5 > B_MIN)
+	{
+		r5--;
+		if (g6 > G_MIN)
+			g6--;
+		if (b5 > B_MIN)
+			b5--;
+	}
+	return (r5 << 11) | (g6 << 5) | b5;
+}

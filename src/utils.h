@@ -36,5 +36,5 @@ struct Frame
 };
 
 bool useBlackText(uint16_t color565);
-
+uint16_t brightenDown(uint16_t color);
 #endif

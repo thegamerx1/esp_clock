@@ -114,6 +114,30 @@ WiFiClientSecure espClient;
 PubSubClient mqttclient(espClient);
 TaskHandle_t task_handles[MAX_TASKS] = {NULL};
 
+void set_palette(bool night)
+{
+  if (night)
+  {
+    myBLACK = dma_display->color565(0, 0, 0);
+    myWHITE = dma_display->color565(40, 40, 40);
+    myGRAY = myWHITE;
+    myLightGRAY = myWHITE;
+    myRED = dma_display->color565(40, 5, 0);
+    myGREEN = dma_display->color565(0, 40, 0);
+    myBLUE = dma_display->color565(0, 0, 40);
+  }
+  else
+  {
+    myBLACK = dma_display->color565(0, 0, 0);
+    myWHITE = dma_display->color565(255, 255, 255);
+    myGRAY = dma_display->color565(128, 128, 128);
+    myLightGRAY = dma_display->color565(50, 50, 50);
+    myRED = dma_display->color565(242, 0, 0);
+    myGREEN = dma_display->color565(0, 255, 0);
+    myBLUE = dma_display->color565(0, 128, 255);
+  }
+}
+
 void loadGifsFromDir(File dir)
 {
   while (true)
@@ -339,6 +363,7 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   else if (strcmp(topic, mqtt_show_clock_on_sleep_topic) == 0)
   {
     SLEEP_CLOCK = (val == "on");
+    set_palette(SLEEP_CLOCK);
     if (SLEEP_CLOCK)
     {
       pause_tasks_and_reduce_clock();
@@ -462,14 +487,7 @@ void configure_panel(bool double_buff)
 
   // Display Setup
   dma_display = new MatrixPanel_I2S_DMA(mxconfig);
-  myBLACK = dma_display->color565(0, 0, 0);
-  myWHITE = dma_display->color565(255, 255, 255);
-  myGRAY = dma_display->color565(128, 128, 128);
-  myLightGRAY = dma_display->color565(50, 50, 50);
-  myRED = dma_display->color565(242, 20, 20);
-  myGREEN = dma_display->color565(0, 255, 0);
-  myBLUE = dma_display->color565(0, 128, 255);
-
+  set_palette(SLEEP_CLOCK);
   dma_display->begin();
   dma_display->clearScreen();
   dma_display->setBrightness8(DEFAULT_BRIGHTNESS); // 0-255
@@ -548,6 +566,32 @@ void draw_dht(int temp, int hum)
   dma_display->print("H");
   dma_display->setTextColor(myBLUE);
   dma_display->printf("%02d%%\n", hum);
+}
+
+void draw_dht_avg()
+{
+  if (xSemaphoreTake(dht_mutex, pdMS_TO_TICKS(10)) == pdTRUE)
+  {
+
+    float temp_sum = dht_temperature;
+    float hum_sum = dht_humidity;
+    int count = 1;
+    if (dht_2_temperature >= 0 && dht_2_humidity >= 0)
+    {
+      temp_sum += dht_2_temperature;
+      hum_sum += dht_2_humidity;
+      count = 2;
+    }
+    dma_display->setCursor(3, 7);
+    draw_dht(round_float(temp_sum / count), round_float(hum_sum / count));
+    // dma_display->setCursor(5, 12);
+    // draw_dht((int)dht_2_temperature, (int)dht_2_humidity);
+    xSemaphoreGive(dht_mutex);
+  }
+  else
+  {
+    log_boot_message("DHT22", "Failed to get dht22 mutex");
+  }
 }
 
 void GIFDraw(GIFDRAW *pDraw)
@@ -691,8 +735,17 @@ void draw_calendar()
     uint16_t textColor = myWHITE;
     if (day_colors.count(day))
     {
-      dma_display->fillRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, day_colors[day]);
-      textColor = useBlackText(day_colors[day]) ? myBLACK : myWHITE;
+      uint16_t bg_color = day_colors[day];
+      if (SLEEP_CLOCK)
+      {
+        bg_color = brightenDown(bg_color);
+        dma_display->drawRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, bg_color);
+      }
+      else
+      {
+        dma_display->fillRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, bg_color);
+      }
+      textColor = useBlackText(bg_color) ? myBLACK : myWHITE;
     }
     if (timeinfo.tm_mday == day)
     {
@@ -790,6 +843,12 @@ void loop()
     unsigned long t_start = millis();
     dma_display->clearScreen();
     draw_clock(true);
+    draw_dht_avg();
+    if (PANEL_DUAL)
+    {
+      draw_calendar();
+    }
+
     dma_display->flipDMABuffer();
     unsigned long t_end = millis();
     unsigned long elapsed = t_end - t_start;
@@ -820,61 +879,46 @@ void loop()
   uint32_t mode = t % 4096;
   if (mode > 1024 && !ANIM_ONLY_MODE || ANIM_DISABLE)
   {
-    if (xSemaphoreTake(dht_mutex, pdMS_TO_TICKS(0)) == pdTRUE)
+
+    dma_display->clearScreen();
+
+    dma_display->setTextSize(1);
+    // uint16_t rgb_color = rainbow565(t % 256);
+    // int x = t % (dma_display->width() + 10);
+    // int x2 = (t + 16) % (dma_display->width() + 10);
+
+    // CENTER LINE
+    // dma_display->fillRect(31, 0, 2, 64, myWHITE);
+
+    // RGB BORDER
+    if (ANIM_RGBBORDER)
     {
-      dma_display->clearScreen();
-
-      dma_display->setTextSize(1);
-      // uint16_t rgb_color = rainbow565(t % 256);
-      // int x = t % (dma_display->width() + 10);
-      // int x2 = (t + 16) % (dma_display->width() + 10);
-
-      // CENTER LINE
-      // dma_display->fillRect(31, 0, 2, 64, myWHITE);
-
-      // RGB BORDER
-      if (ANIM_RGBBORDER)
-      {
-        uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
-        dma_display->drawRect(0, 0, PANEL_RES_X * PANEL_CHAIN, PANEL_RES_Y, rgb_color_rect);
-      }
-      // dma_display->drawRect(1, 1, 62, 62, rgb_color_rect);
-      // dma_display->fillCircle(x - 5, 55, 5, rgb_color);
-      // dma_display->fillCircle(x2 - 5, 55, 5, rgb_color);
-
-      float temp_sum = dht_temperature;
-      float hum_sum = dht_humidity;
-      int count = 1;
-      if (dht_2_temperature >= 0 && dht_2_humidity >= 0)
-      {
-        temp_sum += dht_2_temperature;
-        hum_sum += dht_2_humidity;
-        count = 2;
-      }
-      dma_display->setCursor(3, 7);
-      draw_dht(round_float(temp_sum / count), round_float(hum_sum / count));
-      // dma_display->setCursor(5, 12);
-      // draw_dht((int)dht_2_temperature, (int)dht_2_humidity);
-      xSemaphoreGive(dht_mutex);
-
-      dma_display->setCursor(31, 62);
-      draw_ram();
-
-      dma_display->setCursor(3, 62);
-      dma_display->setTextColor(myWHITE);
-      dma_display->print("FPS");
-      dma_display->setTextColor(myGRAY);
-      dma_display->printf("%d", someVariableHoldingFPS);
-
-      draw_clock(false);
-
-      if (PANEL_DUAL)
-      {
-        draw_calendar();
-      }
-
-      dma_display->flipDMABuffer();
+      uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
+      dma_display->drawRect(0, 0, PANEL_RES_X * PANEL_CHAIN, PANEL_RES_Y, rgb_color_rect);
     }
+    // dma_display->drawRect(1, 1, 62, 62, rgb_color_rect);
+    // dma_display->fillCircle(x - 5, 55, 5, rgb_color);
+    // dma_display->fillCircle(x2 - 5, 55, 5, rgb_color);
+
+    draw_dht_avg();
+
+    dma_display->setCursor(31, 62);
+    draw_ram();
+
+    dma_display->setCursor(3, 62);
+    dma_display->setTextColor(myWHITE);
+    dma_display->print("FPS");
+    dma_display->setTextColor(myGRAY);
+    dma_display->printf("%d", someVariableHoldingFPS);
+
+    draw_clock(false);
+
+    if (PANEL_DUAL)
+    {
+      draw_calendar();
+    }
+
+    dma_display->flipDMABuffer();
   }
   else
   {

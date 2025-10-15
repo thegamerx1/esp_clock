@@ -61,6 +61,7 @@ String currentFrame = "pharmacy";
 MatrixPanel_I2S_DMA *dma_display = nullptr;
 uint16_t myBLACK, myWHITE, myRED, myGREEN, myBLUE, myGRAY, myLightGRAY;
 uint16_t *GIF_BUFFER;
+uint16_t gif_index;
 uint8_t PANEL_BRIGHTNESS;
 bool POWER_MODE = true;
 bool POWER_SAVING = false;
@@ -445,160 +446,13 @@ void mqtt_publish(void *pvParameters)
   }
 }
 
-#define MAX_BOOT_LINES 10
-void boot_message(String message)
-{
-  log_boot_message("ESP", "BOOT: %s", message);
-  static String lines[MAX_BOOT_LINES];
-  static int index = 0;
-  static int count = 0;
-
-  lines[index] = message;               // Add new message at current index
-  index = (index + 1) % MAX_BOOT_LINES; // Move index, wrap around
-  if (count < MAX_BOOT_LINES)
-    count++; // Keep track of how many lines stored
-
-  dma_display->clearScreen();
-  dma_display->setCursor(0, 0);
-
-  int start = (count == MAX_BOOT_LINES) ? index : 0; // Start printing from oldest line
-  for (int i = 0; i < count; i++)
-  {
-    int lineIndex = (start + i) % MAX_BOOT_LINES;
-    dma_display->println(lines[lineIndex]);
-  }
-  dma_display->flipDMABuffer();
-}
-
-void configure_panel(bool double_buff)
-{
-  HUB75_I2S_CFG::i2s_pins _pins = {G1_PIN, B1_PIN, R1_PIN, G2_PIN, B2_PIN, R2_PIN, A_PIN, B_PIN, C_PIN, D_PIN, E_PIN, LAT_PIN, OE_PIN, CLK_PIN};
-  HUB75_I2S_CFG mxconfig(
-      PANEL_RES_X, // module width
-      PANEL_RES_Y, // module height
-      PANEL_CHAIN, // Chain length
-      _pins);
-
-  mxconfig.double_buff = double_buff;
-  mxconfig.clkphase = false;
-  // mxconfig.latch_blanking = 2;
-  // mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
-
-  // Display Setup
-  dma_display = new MatrixPanel_I2S_DMA(mxconfig);
-  set_palette(SLEEP_CLOCK);
-  dma_display->begin();
-  dma_display->clearScreen();
-  dma_display->setBrightness8(DEFAULT_BRIGHTNESS); // 0-255
-  PANEL_BRIGHTNESS = DEFAULT_BRIGHTNESS;
-
-  dma_display->setTextSize(1);     // size 1 == 8 pixels high
-  dma_display->setTextWrap(false); // Don't wrap at end of line - will do ourselves
-  dma_display->setTextColor(dma_display->color444(15, 15, 15));
-}
-
-void setup()
-{
-  Serial.begin(115200);
-  configure_panel(true);
-
-  boot_message("WIFI!");
-  dma_display->setFont(&TomThumb);
-
-  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
-  {
-    log_boot_message("ESP", "STA Failed to configure");
-  }
-  WiFi.begin(ssid, password);
-  WiFi.setAutoReconnect(true);
-  boot_message("LittleFS!");
-  if (!LittleFS.begin(false))
-  {
-    log_boot_message("ESP", "An Error has occurred while mounting SPIFFS");
-  }
-
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
-    log_boot_message("ESP", "Connecting to WIFI");
-  }
-  boot_message("WIFI OK!");
-  // TODO: Fix the cert
-  // espClient.setCACert(CA_CERT);
-  espClient.setInsecure();
-
-  boot_message("TASKS!");
-  dht_mutex = xSemaphoreCreateMutex();
-  task_handles[0] = NULL;
-  xTaskCreate(dht_task, "dht_task", 8192, NULL, 5, NULL);
-  xTaskCreate(mqtt_task, "mqtt_task", 8192, NULL, 5, NULL);
-  xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 5, NULL);
-
-  configTzTime(MY_TIMEZONE, NTP_SERVER);
-  // boot_message("TEST SCREEN!");
-  // test_screen();
-  boot_message("OK!");
-
-  boot_message("GIFS LOAD!");
-  loadGifsByCategory();
-  boot_message("GIFS: " + String(LOADED_ANIMATIONS));
-
-  boot_message("BUFFER!");
-  gif.begin(GIF_PALETTE_RGB565_LE);
-  GIF_BUFFER = (uint16_t *)ps_malloc(64 * 64 * 2);
-  if (!GIF_BUFFER)
-  {
-    log_boot_message("GIF", "ps_malloc failed for GIF BUFFER");
-    return;
-  }
-  memset(GIF_BUFFER, 0, 64 * 64 * 2);
-}
-
-void draw_dht(int temp, int hum)
-{
-  dma_display->setTextColor(myWHITE);
-  dma_display->print("T");
-  dma_display->setTextColor(myRED);
-  dma_display->printf("%02dC", temp);
-
-  dma_display->setTextColor(myWHITE);
-  dma_display->print("H");
-  dma_display->setTextColor(myBLUE);
-  dma_display->printf("%02d%%\n", hum);
-}
-
-void draw_dht_avg()
-{
-  if (xSemaphoreTake(dht_mutex, pdMS_TO_TICKS(10)) == pdTRUE)
-  {
-
-    float temp_sum = dht_temperature;
-    float hum_sum = dht_humidity;
-    int count = 1;
-    if (dht_2_temperature >= 0 && dht_2_humidity >= 0)
-    {
-      temp_sum += dht_2_temperature;
-      hum_sum += dht_2_humidity;
-      count = 2;
-    }
-    dma_display->setCursor(3, 7);
-    draw_dht(round_float(temp_sum / count), round_float(hum_sum / count));
-    // dma_display->setCursor(5, 12);
-    // draw_dht((int)dht_2_temperature, (int)dht_2_humidity);
-    xSemaphoreGive(dht_mutex);
-  }
-  else
-  {
-    log_boot_message("DHT22", "Failed to get dht22 mutex");
-  }
-}
-
 void GIFDraw(GIFDRAW *pDraw)
 {
   uint8_t *s;
   uint16_t *d, *usPalette, usTemp[320];
   int x, y;
 
+  noInterrupts();
   usPalette = pDraw->pPalette;
   y = pDraw->iY + pDraw->y; // current line
 
@@ -674,7 +528,209 @@ void GIFDraw(GIFDRAW *pDraw)
       GIF_BUFFER[y * 64 + (x + pDraw->iX)] = usPalette[*s++];
     }
   }
+  interrupts();
 } /* GIFDraw() */
+
+void gif_task(void *pvParameters)
+{
+  while (!GIF_BUFFER)
+  {
+    vTaskDelay(pdMS_TO_TICKS(2500));
+  }
+  while (1)
+  {
+    log_boot_message("GIF", "Removing buffer");
+    gif_index++;
+    memset(GIF_BUFFER, 0, 64 * 64 * 2);
+
+    auto &myframes = PANEL_FRAMES[currentFrame];
+    if (myframes.empty())
+    {
+      vTaskDelay(pdMS_TO_TICKS(2500));
+      continue;
+    }
+    if (played_gif >= myframes.size())
+    {
+      played_gif = 0;
+    }
+    log_boot_message("GIF", "Playing gif: %s, ID: %d", currentFrame.c_str(), played_gif);
+    gif.open(myframes[played_gif].data, myframes[played_gif].size, GIFDraw);
+
+    int frameDelay = 0; // store delay for the last frame
+    int then = 0;       // store overall delay
+
+    while (gif.playFrame(true, &frameDelay))
+    {
+      gif_index++;
+      vTaskDelay(pdMS_TO_TICKS(frameDelay));
+
+      // dma_display->setTextSize(1);
+      // dma_display->setTextColor(myWHITE);
+      // dma_display->setCursor(0, 53);
+      // dma_display->flipDMABuffer();
+
+      then += frameDelay;
+      if (then > maxGifDuration)
+      { // avoid being trapped in infinite GIF's
+        // log_w("Broke the GIF loop, max duration exceeded");
+        break;
+      }
+    }
+
+    log_boot_message("GIF", "Close gif");
+    gif.close();
+    played_gif++;
+  }
+}
+
+#define MAX_BOOT_LINES 10
+void boot_message(String message)
+{
+  log_boot_message("ESP", "BOOT: %s", message);
+  static String lines[MAX_BOOT_LINES];
+  static int index = 0;
+  static int count = 0;
+
+  lines[index] = message;               // Add new message at current index
+  index = (index + 1) % MAX_BOOT_LINES; // Move index, wrap around
+  if (count < MAX_BOOT_LINES)
+    count++; // Keep track of how many lines stored
+
+  dma_display->clearScreen();
+  dma_display->setCursor(0, 0);
+
+  int start = (count == MAX_BOOT_LINES) ? index : 0; // Start printing from oldest line
+  for (int i = 0; i < count; i++)
+  {
+    int lineIndex = (start + i) % MAX_BOOT_LINES;
+    dma_display->println(lines[lineIndex]);
+  }
+  dma_display->flipDMABuffer();
+}
+
+void configure_panel(bool double_buff)
+{
+  HUB75_I2S_CFG::i2s_pins _pins = {G1_PIN, B1_PIN, R1_PIN, G2_PIN, B2_PIN, R2_PIN, A_PIN, B_PIN, C_PIN, D_PIN, E_PIN, LAT_PIN, OE_PIN, CLK_PIN};
+  HUB75_I2S_CFG mxconfig(
+      PANEL_RES_X, // module width
+      PANEL_RES_Y, // module height
+      PANEL_CHAIN, // Chain length
+      _pins);
+
+  mxconfig.double_buff = double_buff;
+  mxconfig.clkphase = false;
+  // mxconfig.latch_blanking = 2;
+  mxconfig.min_refresh_rate = 90;
+  // mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
+
+  // Display Setup
+  dma_display = new MatrixPanel_I2S_DMA(mxconfig);
+  set_palette(SLEEP_CLOCK);
+  dma_display->begin();
+  dma_display->clearScreen();
+  dma_display->setBrightness8(DEFAULT_BRIGHTNESS); // 0-255
+  PANEL_BRIGHTNESS = DEFAULT_BRIGHTNESS;
+
+  dma_display->setTextSize(1);     // size 1 == 8 pixels high
+  dma_display->setTextWrap(false); // Don't wrap at end of line - will do ourselves
+  dma_display->setTextColor(dma_display->color444(15, 15, 15));
+}
+
+void setup()
+{
+  Serial.begin(115200);
+  configure_panel(true);
+
+  boot_message("WIFI!");
+  dma_display->setFont(&TomThumb);
+
+  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
+  {
+    log_boot_message("ESP", "STA Failed to configure");
+  }
+  WiFi.begin(ssid, password);
+  WiFi.setAutoReconnect(true);
+  boot_message("LittleFS!");
+  if (!LittleFS.begin(false))
+  {
+    log_boot_message("ESP", "An Error has occurred while mounting SPIFFS");
+  }
+
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    log_boot_message("ESP", "Connecting to WIFI");
+  }
+  boot_message("WIFI OK!");
+  // TODO: Fix the cert
+  // espClient.setCACert(CA_CERT);
+  espClient.setInsecure();
+
+  boot_message("TASKS!");
+  dht_mutex = xSemaphoreCreateMutex();
+  task_handles[0] = NULL;
+  xTaskCreate(dht_task, "dht_task", 8192, NULL, 5, NULL);
+  xTaskCreate(mqtt_task, "mqtt_task", 8192, NULL, 5, NULL);
+  xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 5, NULL);
+  xTaskCreate(gif_task, "gif_task", 8192, NULL, 5, NULL);
+
+  configTzTime(MY_TIMEZONE, NTP_SERVER);
+  // boot_message("TEST SCREEN!");
+  // test_screen();
+  boot_message("OK!");
+
+  boot_message("GIFS LOAD!");
+  loadGifsByCategory();
+  boot_message("GIFS: " + String(LOADED_ANIMATIONS));
+
+  boot_message("BUFFER!");
+  gif.begin(GIF_PALETTE_RGB565_LE);
+  GIF_BUFFER = (uint16_t *)ps_malloc(64 * 64 * 2);
+  if (!GIF_BUFFER)
+  {
+    log_boot_message("GIF", "ps_malloc failed for GIF BUFFER");
+    return;
+  }
+}
+
+void draw_dht(int temp, int hum)
+{
+  dma_display->setTextColor(myWHITE);
+  dma_display->print("T");
+  dma_display->setTextColor(myRED);
+  dma_display->printf("%02dC", temp);
+
+  dma_display->setTextColor(myWHITE);
+  dma_display->print("H");
+  dma_display->setTextColor(myBLUE);
+  dma_display->printf("%02d%%\n", hum);
+}
+
+void draw_dht_avg()
+{
+  if (xSemaphoreTake(dht_mutex, pdMS_TO_TICKS(10)) == pdTRUE)
+  {
+
+    float temp_sum = dht_temperature;
+    float hum_sum = dht_humidity;
+    int count = 1;
+    if (dht_2_temperature >= 0 && dht_2_humidity >= 0)
+    {
+      temp_sum += dht_2_temperature;
+      hum_sum += dht_2_humidity;
+      count = 2;
+    }
+    dma_display->setCursor(3, 7);
+    draw_dht(round_float(temp_sum / count), round_float(hum_sum / count));
+    // dma_display->setCursor(5, 12);
+    // draw_dht((int)dht_2_temperature, (int)dht_2_humidity);
+    xSemaphoreGive(dht_mutex);
+  }
+  else
+  {
+    log_boot_message("DHT22", "Failed to get dht22 mutex");
+  }
+}
 
 void draw_ram()
 {
@@ -821,6 +877,7 @@ void loop()
   static const uint32_t frameDelayMs = 1000 / 100;
   static uint32_t lastFrameTime = 0;
   static int someVariableHoldingFPS = 0;
+  static uint16_t last_gif = 0;
   static unsigned long lastMillis = 0;
   static int frames = 0;
 
@@ -868,114 +925,57 @@ void loop()
     }
     lastFrameTime = now;
   }
-  else
-  {
-    delay(frameDelayMs - (now - lastFrameTime));
-    return;
-  }
+  // else
+  // {
+  //   delay(frameDelayMs - (now - lastFrameTime));
+  //   return;
+  // }
 
   uint32_t t = now / 8;
-  uint32_t mode = t % 4096;
-  if ((mode > 1024 && !ANIM_ONLY_MODE) || ANIM_DISABLE)
+
+  // dma_display->clearScreen();
+  dma_display->writeFillRect(0, 0, 64 * 2, 64, myBLACK);
+
+  dma_display->setTextSize(1);
+  // uint16_t rgb_color = rainbow565(t % 256);
+  // int x = t % (dma_display->width() + 10);
+  // int x2 = (t + 16) % (dma_display->width() + 10);
+
+  // CENTER LINE
+  // dma_display->fillRect(31, 0, 2, 64, myWHITE);
+
+  // RGB BORDER
+  if (ANIM_RGBBORDER)
   {
-
-    dma_display->clearScreen();
-
-    dma_display->setTextSize(1);
-    // uint16_t rgb_color = rainbow565(t % 256);
-    // int x = t % (dma_display->width() + 10);
-    // int x2 = (t + 16) % (dma_display->width() + 10);
-
-    // CENTER LINE
-    // dma_display->fillRect(31, 0, 2, 64, myWHITE);
-
-    // RGB BORDER
-    if (ANIM_RGBBORDER)
-    {
-      uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
-      dma_display->drawRect(0, 0, PANEL_RES_X * PANEL_CHAIN, PANEL_RES_Y, rgb_color_rect);
-    }
-    // dma_display->drawRect(1, 1, 62, 62, rgb_color_rect);
-    // dma_display->fillCircle(x - 5, 55, 5, rgb_color);
-    // dma_display->fillCircle(x2 - 5, 55, 5, rgb_color);
-
-    draw_dht_avg();
-
-    dma_display->setCursor(31, 62);
-    draw_ram();
-
-    dma_display->setCursor(3, 62);
-    dma_display->setTextColor(myWHITE);
-    dma_display->print("FPS");
-    dma_display->setTextColor(myGRAY);
-    dma_display->printf("%d", someVariableHoldingFPS);
-
-    draw_clock(false);
-
-    if (PANEL_DUAL)
-    {
-      draw_calendar();
-    }
-
-    if (PANEL_TRIPLE)
-    {
-    }
-
-    dma_display->flipDMABuffer();
+    uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
+    dma_display->drawRect(0, 0, PANEL_RES_X * PANEL_CHAIN, PANEL_RES_Y, rgb_color_rect);
   }
-  else
+  // dma_display->drawRect(1, 1, 62, 62, rgb_color_rect);
+  // dma_display->fillCircle(x - 5, 55, 5, rgb_color);
+  // dma_display->fillCircle(x2 - 5, 55, 5, rgb_color);
+
+  draw_dht_avg();
+
+  dma_display->setCursor(31, 62);
+  draw_ram();
+
+  dma_display->setCursor(3, 62);
+  dma_display->setTextColor(myWHITE);
+  dma_display->print("FPS");
+  dma_display->setTextColor(myGRAY);
+  dma_display->printf("%d", someVariableHoldingFPS);
+
+  draw_clock(false);
+
+  if (PANEL_DUAL)
   {
-    dma_display->clearScreen();
-    dma_display->flipDMABuffer();
-
-    memset(GIF_BUFFER, 0, 64 * 64 * 2);
-
-    auto &myframes = PANEL_FRAMES[currentFrame];
-    if (myframes.empty())
-    {
-      return;
-    }
-    if (played_gif >= myframes.size())
-    {
-      played_gif = 0;
-    }
-    log_boot_message("GIF", "Playing gif: %s, ID: %d", currentFrame.c_str(), played_gif);
-    gif.open(myframes[played_gif].data, myframes[played_gif].size, GIFDraw);
-
-    int frameDelay = 0; // store delay for the last frame
-    int then = 0;       // store overall delay
-
-    dma_display->clearScreen();
-    dma_display->flipDMABuffer();
-    while (gif.playFrame(true, &frameDelay))
-    {
-      // for (int y = 0; y < 64; y++)
-      // {
-      //   for (int x = 0; x < 64; x++)
-      //   {
-      //     int index = y * 64 + x;
-      //     dma_display->drawPixel(x, y, GIF_BUFFER[index]);
-      //   }
-      // }
-      dma_display->drawRGBBitmap(0, 0, GIF_BUFFER, 64, 64);
-
-      dma_display->setTextSize(1);
-      dma_display->setTextColor(myWHITE);
-      dma_display->setCursor(0, 53);
-      // dma_display->println("Ander");
-      // dma_display->println("Darkity.top");
-      dma_display->flipDMABuffer();
-
-      then += frameDelay;
-      if (then > maxGifDuration)
-      { // avoid being trapped in infinite GIF's
-        // log_w("Broke the GIF loop, max duration exceeded");
-        break;
-      }
-    }
-
-    gif.close();
-    played_gif++;
+    draw_calendar();
   }
-  // }
+
+  if (PANEL_TRIPLE)
+  {
+    dma_display->drawRGBBitmap(64 * 2, 0, GIF_BUFFER, 64, 64);
+  }
+
+  dma_display->flipDMABuffer();
 }

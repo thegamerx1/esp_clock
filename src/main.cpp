@@ -539,6 +539,16 @@ void gif_task(void *pvParameters)
   }
   while (1)
   {
+    if (POWER_SAVING)
+    {
+      vTaskDelay(pdMS_TO_TICKS(6000));
+      continue;
+    }
+    if (ANIM_DISABLE)
+    {
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      continue;
+    }
     log_boot_message("GIF", "Removing buffer");
     gif_index++;
     memset(GIF_BUFFER, 0, 64 * 64 * 2);
@@ -561,6 +571,10 @@ void gif_task(void *pvParameters)
 
     while (gif.playFrame(true, &frameDelay))
     {
+      if (POWER_SAVING)
+      {
+        break;
+      }
       gif_index++;
       vTaskDelay(pdMS_TO_TICKS(frameDelay));
 
@@ -672,7 +686,7 @@ void setup()
   xTaskCreate(dht_task, "dht_task", 8192, NULL, 5, NULL);
   xTaskCreate(mqtt_task, "mqtt_task", 8192, NULL, 5, NULL);
   xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 5, NULL);
-  xTaskCreate(gif_task, "gif_task", 8192, NULL, 5, NULL);
+  xTaskCreate(gif_task, "gif_task", 2048, NULL, 5, NULL);
 
   configTzTime(MY_TIMEZONE, NTP_SERVER);
   // boot_message("TEST SCREEN!");
@@ -691,6 +705,7 @@ void setup()
     log_boot_message("GIF", "ps_malloc failed for GIF BUFFER");
     return;
   }
+  memset(GIF_BUFFER, 0, 64 * 64 * 2);
 }
 
 void draw_dht(int temp, int hum)
@@ -933,8 +948,8 @@ void loop()
 
   uint32_t t = now / 8;
 
-  // dma_display->clearScreen();
-  dma_display->writeFillRect(0, 0, 64 * 2, 64, myBLACK);
+  dma_display->clearScreen();
+  // dma_display->writeFillRect(0, 0, 64 * 2, 64, myBLACK);
 
   dma_display->setTextSize(1);
   // uint16_t rgb_color = rainbow565(t % 256);
@@ -944,12 +959,6 @@ void loop()
   // CENTER LINE
   // dma_display->fillRect(31, 0, 2, 64, myWHITE);
 
-  // RGB BORDER
-  if (ANIM_RGBBORDER)
-  {
-    uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
-    dma_display->drawRect(0, 0, PANEL_RES_X * PANEL_CHAIN, PANEL_RES_Y, rgb_color_rect);
-  }
   // dma_display->drawRect(1, 1, 62, 62, rgb_color_rect);
   // dma_display->fillCircle(x - 5, 55, 5, rgb_color);
   // dma_display->fillCircle(x2 - 5, 55, 5, rgb_color);
@@ -974,7 +983,17 @@ void loop()
 
   if (PANEL_TRIPLE)
   {
-    dma_display->drawRGBBitmap(64 * 2, 0, GIF_BUFFER, 64, 64);
+    if (!ANIM_DISABLE)
+    {
+      dma_display->drawRGBBitmap(64 * 2, 0, GIF_BUFFER, 64, 64);
+    }
+  }
+
+  // RGB BORDER
+  if (ANIM_RGBBORDER)
+  {
+    uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
+    dma_display->drawRect(0, 0, PANEL_RES_X * PANEL_CHAIN, PANEL_RES_Y, rgb_color_rect);
   }
 
   dma_display->flipDMABuffer();

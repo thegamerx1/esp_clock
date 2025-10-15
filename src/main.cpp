@@ -25,11 +25,10 @@
 // ---- PANEL CONFIG ----
 #define PANEL_RES_X 64
 #define PANEL_RES_Y 64
-#define PANEL_CHAIN 2
+#define PANEL_CHAIN 3
 
-#if PANEL_CHAIN == 2
-#define PANEL_DUAL 1
-#endif
+#define PANEL_DUAL PANEL_CHAIN >= 2
+#define PANEL_TRIPLE PANEL_CHAIN >= 3
 
 #define DEFAULT_BRIGHTNESS 5
 #define R1_PIN 4
@@ -48,7 +47,7 @@
 #define CLK_PIN 41
 #define FRAME_COUNT 32
 
-#define DHTPIN 39
+#define DHTPIN 9
 #define DHTTYPE DHT22
 
 // #define FRAME_SIZE (PANEL_RES_X * PANEL_RES_Y)
@@ -97,7 +96,7 @@ const char *mqtt_dht_2_topic = "home/rpi/dht22";
 
 std::map<uint8_t, uint16_t> day_colors; // day -> RGB565 color
 
-bool ANIM_DISABLE = false;
+bool ANIM_DISABLE = true;
 bool ANIM_RGBBORDER = false;
 bool ANIM_ONLY_MODE = false;
 bool SLEEP_CLOCK = false;
@@ -532,9 +531,9 @@ void setup()
   dht_mutex = xSemaphoreCreateMutex();
   task_handles[0] = NULL;
   xTaskCreate(dht_task, "dht_task", 8192, NULL, 5, NULL);
-  xTaskCreate(mqtt_task, "mqtt_task", 16384, NULL, 5, NULL);
+  xTaskCreate(mqtt_task, "mqtt_task", 8192, NULL, 5, NULL);
   xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 5, NULL);
-  // xTaskCreate(ntp_task, "ntp_task", 4096, NULL, 5, &task_handles[0]);
+
   configTzTime(MY_TIMEZONE, NTP_SERVER);
   // boot_message("TEST SCREEN!");
   // test_screen();
@@ -598,7 +597,7 @@ void GIFDraw(GIFDRAW *pDraw)
 {
   uint8_t *s;
   uint16_t *d, *usPalette, usTemp[320];
-  int x, y, iWidth;
+  int x, y;
 
   usPalette = pDraw->pPalette;
   y = pDraw->iY + pDraw->y; // current line
@@ -606,7 +605,7 @@ void GIFDraw(GIFDRAW *pDraw)
   s = pDraw->pPixels;
   if (pDraw->ucDisposalMethod == 2) // restore to background color
   {
-    for (x = 0; x < iWidth; x++)
+    for (x = 0; x < pDraw->iWidth; x++)
     {
       if (s[x] == pDraw->ucTransparent)
         s[x] = pDraw->ucBackground;
@@ -877,7 +876,7 @@ void loop()
 
   uint32_t t = now / 8;
   uint32_t mode = t % 4096;
-  if (mode > 1024 && !ANIM_ONLY_MODE || ANIM_DISABLE)
+  if ((mode > 1024 && !ANIM_ONLY_MODE) || ANIM_DISABLE)
   {
 
     dma_display->clearScreen();
@@ -918,6 +917,10 @@ void loop()
       draw_calendar();
     }
 
+    if (PANEL_TRIPLE)
+    {
+    }
+
     dma_display->flipDMABuffer();
   }
   else
@@ -942,6 +945,8 @@ void loop()
     int frameDelay = 0; // store delay for the last frame
     int then = 0;       // store overall delay
 
+    dma_display->clearScreen();
+    dma_display->flipDMABuffer();
     while (gif.playFrame(true, &frameDelay))
     {
       // for (int y = 0; y < 64; y++)

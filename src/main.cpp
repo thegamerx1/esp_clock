@@ -775,7 +775,7 @@ void draw_ram()
 }
 
 #define CALENDAR_OFFSET_X 65
-#define CALENDAR_OFFSET_Y 13
+#define CALENDAR_OFFSET_Y 0
 #define CALENDAR_CELL_W 9
 #define CALENDAR_CELL_H 8
 void draw_calendar()
@@ -801,6 +801,18 @@ void draw_calendar()
   int day = 1;
   int row = 0;
   int col = start;
+
+  // Draw weekdays at the top
+  for (int i = 0; i < 7; i++)
+  {
+    int x = CALENDAR_OFFSET_X + i * CALENDAR_CELL_W;
+    dma_display->setTextColor(myWHITE);
+    dma_display->setCursor(x + 1, CALENDAR_OFFSET_Y + 6);
+    char c[3] = {DAYS[i][0], DAYS[i][1], '\0'};
+    dma_display->printf(c);
+  }
+
+  row++;
 
   while (day <= days)
   {

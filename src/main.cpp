@@ -1,5 +1,4 @@
 #include "secrets.h"
-#define MQTT_MAX_PACKET_SIZE 1024
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
@@ -97,7 +96,7 @@ const char *mqtt_calendar_topic = "home/esp1/calendar";
 const char *mqtt_dht_topic = "home/esp1/dht22";
 const char *mqtt_dht_2_topic = "home/rpi/dht22";
 
-std::map<uint8_t, uint16_t> day_colors; // day -> RGB565 color
+std::map<String, uint16_t> date_colors;
 
 bool ANIM_DISABLE = true;
 bool ANIM_RGBBORDER = false;
@@ -346,16 +345,18 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     if (err)
     {
       log_boot_message("CAL", "Error calendar");
-      return;
     }
-
-    day_colors.clear();
-    JsonObject colors = doc["colors"];
-    for (JsonPair p : colors)
+    else
     {
-      uint8_t day = atoi(p.key().c_str());
-      uint16_t color = p.value().as<uint16_t>();
-      day_colors[day] = color;
+      date_colors.clear();
+      JsonObject colors = doc.as<JsonObject>();
+      for (JsonPair p : colors)
+      {
+        String date = p.key().c_str();
+        uint16_t color = p.value().as<uint16_t>();
+        date_colors[date] = color;
+      }
+      log_boot_message("CAL", "Updated");
     }
   }
   else if (strcmp(topic, mqtt_rgbborder_topic) == 0)
@@ -556,7 +557,7 @@ void gif_task(void *pvParameters)
       vTaskDelay(pdMS_TO_TICKS(1000));
       continue;
     }
-    log_boot_message("GIF", "Removing buffer");
+
     gif_index++;
     memset(GIF_BUFFER, 0, 64 * 64 * 2);
 
@@ -598,7 +599,6 @@ void gif_task(void *pvParameters)
       }
     }
 
-    log_boot_message("GIF", "Close gif");
     gif.close();
     played_gif++;
   }
@@ -742,7 +742,7 @@ void draw_dht_avg()
       hum_sum += dht_2_humidity;
       count = 2;
     }
-    dma_display->setCursor(3, 7);
+    dma_display->setCursor(3, 5);
     draw_dht(round_float(temp_sum / count), round_float(hum_sum / count));
     // dma_display->setCursor(5, 12);
     // draw_dht((int)dht_2_temperature, (int)dht_2_humidity);
@@ -775,7 +775,7 @@ void draw_ram()
 }
 
 #define CALENDAR_OFFSET_X 65
-#define CALENDAR_OFFSET_Y 0
+#define CALENDAR_OFFSET_Y -1
 #define CALENDAR_CELL_W 9
 #define CALENDAR_CELL_H 8
 void draw_calendar()
@@ -825,86 +825,77 @@ void draw_calendar()
     char c[3] = {DAYS[i][0], DAYS[i][1], '\0'};
     dma_display->printf(c);
   }
+  dma_display->drawFastHLine(CALENDAR_OFFSET_X, 6, 64 - 1, myWHITE);
 
-  // Draw calendar days (6 rows × 7 columns = 42 cells)
   int total_cells = 42;
-  int day_counter = 1;
 
   for (int cell = 0; cell < total_cells; cell++)
   {
-    int row = cell / 7 + 1; // +1 because row 0 is weekdays
+    int row = cell / 7 + 1;
     int col = cell % 7;
 
     int x = CALENDAR_OFFSET_X + col * CALENDAR_CELL_W;
     int y = CALENDAR_OFFSET_Y + row * CALENDAR_CELL_H;
 
     int display_day;
+    int display_year;
+    int display_month;
     bool is_current_month = false;
     bool is_prev_month = false;
     bool is_next_month = false;
 
-    // Determine which month this cell belongs to
     if (cell < start_weekday)
     {
       // Previous month days
       display_day = prev_days - start_weekday + cell + 1;
+      display_year = prev_year;
+      display_month = prev_month;
       is_prev_month = true;
     }
     else if (cell < start_weekday + current_days)
     {
       // Current month days
       display_day = cell - start_weekday + 1;
+      display_year = current_year;
+      display_month = current_month;
       is_current_month = true;
     }
     else
     {
       // Next month days
       display_day = cell - start_weekday - current_days + 1;
+      display_year = next_year;
+      display_month = next_month;
       is_next_month = true;
     }
+
+    String date_str = String(display_year) + "-" +
+                      String(display_month < 10 ? "0" : "") + String(display_month) + "-" +
+                      String(display_day < 10 ? "0" : "") + String(display_day);
 
     dma_display->setCursor(x + 1, y + 6);
 
     uint16_t textColor = myWHITE;
     bool is_today = false;
 
-    // Handle coloring and highlighting only for current month
-    if (is_current_month)
+    if (date_colors.find(date_str) != date_colors.end())
     {
-      is_today = (display_day == current_day);
-
-      if (day_colors.count(display_day))
+      uint16_t bg_color = date_colors[date_str];
+      if (SLEEP_CLOCK)
       {
-        uint16_t bg_color = day_colors[display_day];
-        if (SLEEP_CLOCK)
-        {
-          bg_color = brightenDown(bg_color);
-          dma_display->drawRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, bg_color);
-        }
-        else
-        {
-          dma_display->fillRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, bg_color);
-        }
+        bg_color = brightenDown(bg_color);
+        dma_display->drawRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, bg_color);
+      }
+      else
+      {
+        dma_display->fillRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, bg_color);
         textColor = useBlackText(bg_color) ? myBLACK : myWHITE;
       }
     }
 
-    // Set text color based on day type
-    if (is_prev_month || is_next_month)
+    if (is_current_month && display_day == current_day)
     {
-      dma_display->setTextColor(myGRAY);
-    }
-    else if (col >= 5)
-    {
-      dma_display->setTextColor(myGRAY);
-    }
-    else
-    {
-      dma_display->setTextColor(textColor);
-    }
-
-    if (is_today)
-    {
+      is_today = true;
       unsigned long now = millis();
       if (now - lastBlink >= blinkInterval)
       {
@@ -916,11 +907,31 @@ void draw_calendar()
       dma_display->drawRoundRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, 2, color);
     }
 
+    if (is_prev_month || is_next_month)
+    {
+      if (date_colors.find(date_str) != date_colors.end())
+      {
+        dma_display->setTextColor(textColor);
+      }
+      else
+      {
+        dma_display->setTextColor(myGRAY);
+      }
+    }
+    else if (col >= 5)
+    {
+      dma_display->setTextColor(textColor);
+    }
+    else
+    {
+      dma_display->setTextColor(textColor);
+    }
+
     dma_display->printf("%2d", display_day);
   }
 }
 
-#define CLOCK_OFFSET_Y 32
+#define CLOCK_OFFSET_Y 28
 void draw_clock(bool night)
 {
   struct tm timeinfo;

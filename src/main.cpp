@@ -1,4 +1,5 @@
 #include "secrets.h"
+#define MQTT_MAX_PACKET_SIZE 1024
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
@@ -338,13 +339,17 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   }
   else if (strcmp(topic, mqtt_calendar_topic) == 0)
   {
-    Serial.println("Got calendar");
-    Serial.println(val);
+    log_boot_message("CAL", "Got calendar");
+    log_boot_message("CAL", "%s", val);
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, payload, length);
     if (err)
+    {
+      log_boot_message("CAL", "Error calendar");
       return;
+    }
 
+    day_colors.clear();
     JsonObject colors = doc["colors"];
     for (JsonPair p : colors)
     {
@@ -397,14 +402,15 @@ void mqtt_task(void *pvParameters)
       log_boot_message("MQTT", "Reconnecting to mqtt.");
       if (mqttclient.connect("ESP32Client", mqtt_user, mqtt_pass))
       {
-        assert(mqttclient.subscribe("home/esp1/#"));
         assert(mqttclient.subscribe(mqtt_dht_2_topic));
-        mqttclient.unsubscribe(mqtt_dht_topic);
         if (!mqttclient.subscribe(mqtt_brightness_topic))
         {
           mqttclient.publish(mqtt_brightness_topic, String(DEFAULT_BRIGHTNESS).c_str(), true);
           assert(mqttclient.subscribe(mqtt_brightness_topic));
         }
+        assert(mqttclient.subscribe("home/esp1/#"));
+        mqttclient.unsubscribe(mqtt_dht_topic);
+        // mqttclient.publish(mqtt_calendar_topic, "{\"colors\": {\"1\": 64608, \"2\": 6611, \"3\": 6611, \"6\": 6611}}", true);
         log_boot_message("MQTT", "Connected to mqtt.");
         break;
       };

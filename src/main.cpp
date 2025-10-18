@@ -19,6 +19,7 @@
 #include "utils.h"
 
 #define NTP_SERVER "212.230.255.2"
+#define NTP_SERVER_FALLBACK "192.168.25.72"
 #define MY_TIMEZONE "CET-1CEST,M3.5.0,M10.5.0/3"
 #define MAX_TASKS 6
 
@@ -688,7 +689,7 @@ void setup()
   xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 5, NULL);
   xTaskCreate(gif_task, "gif_task", 2048, NULL, 5, NULL);
 
-  configTzTime(MY_TIMEZONE, NTP_SERVER);
+  configTzTime(MY_TIMEZONE, NTP_SERVER, NTP_SERVER_FALLBACK);
   // boot_message("TEST SCREEN!");
   // test_screen();
   boot_message("OK!");

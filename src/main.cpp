@@ -2,6 +2,7 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <ArduinoOTA.h>
 #include <WiFiClientSecure.h>
 #include <Fonts/TomThumb.h>
 #include <Fonts/FreeSerifBold12pt7b.h>
@@ -246,10 +247,9 @@ void dht_task(void *pvParameters)
   }
 }
 
-void pause_tasks_and_reduce_clock()
+void pause_tasks()
 {
-  log_boot_message("ESP", "Entering power save mode");
-
+  log_boot_message("ESP", "Pausing tasks");
   for (int i = 0; i < MAX_TASKS; i++)
   {
     if (task_handles[i] != NULL)
@@ -257,6 +257,13 @@ void pause_tasks_and_reduce_clock()
       vTaskSuspend(task_handles[i]);
     }
   }
+}
+
+void pause_tasks_and_reduce_clock()
+{
+  log_boot_message("ESP", "Entering power save mode");
+
+  pause_tasks();
 
   // Lower CPU frequency to 80MHz (from default 240MHz)
   esp_pm_config_esp32s3_t pm_config = {
@@ -629,6 +636,44 @@ void boot_message(String message)
   dma_display->flipDMABuffer();
 }
 
+void ota_task(void *pvParameters)
+{
+  ArduinoOTA.setPasswordHash(OTA_UPDATE_PASS);
+  ArduinoOTA.begin();
+  ArduinoOTA.onStart([]()
+                     {
+                       String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
+                                              log_boot_message("OTA", "Start updating %s", type);
+                       pause_tasks();
+                       TaskHandle_t loopHandle = xTaskGetHandle("loopTask");
+
+                       if (loopHandle != NULL) {
+                         vTaskSuspend(loopHandle);
+                        }
+                        dma_display->clearScreen();
+                        boot_message("UPDATING!");
+                        dma_display->stopDMAoutput(); });
+  ArduinoOTA.onEnd([]()
+                   { log_boot_message("OTA", "End"); });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
+                        { log_boot_message("OTA", "Progress: %u%%\r", (progress / (total / 100))); });
+  ArduinoOTA.onError([](ota_error_t error)
+                     { log_boot_message("OTA", "Error[%u]: ", error); esp_restart(); });
+  while (1)
+  {
+    ArduinoOTA.handle();
+
+    if (POWER_SAVING)
+    {
+      vTaskDelay(pdMS_TO_TICKS(61000));
+    }
+    else
+    {
+      vTaskDelay(pdMS_TO_TICKS(200));
+    }
+  }
+}
+
 void configure_panel(bool double_buff)
 {
   HUB75_I2S_CFG::i2s_pins _pins = {G1_PIN, B1_PIN, R1_PIN, G2_PIN, B2_PIN, R2_PIN, A_PIN, B_PIN, C_PIN, D_PIN, E_PIN, LAT_PIN, OE_PIN, CLK_PIN};
@@ -690,10 +735,11 @@ void setup()
   boot_message("TASKS!");
   dht_mutex = xSemaphoreCreateMutex();
   task_handles[0] = NULL;
-  xTaskCreate(dht_task, "dht_task", 8192, NULL, 5, NULL);
-  xTaskCreate(mqtt_task, "mqtt_task", 8192, NULL, 5, NULL);
-  xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 5, NULL);
-  xTaskCreate(gif_task, "gif_task", 2048, NULL, 5, NULL);
+  xTaskCreate(dht_task, "dht_task", 8192, NULL, 5, &task_handles[0]);
+  xTaskCreate(mqtt_task, "mqtt_task", 8192, NULL, 5, &task_handles[1]);
+  xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 5, &task_handles[2]);
+  xTaskCreate(gif_task, "gif_task", 2048, NULL, 5, &task_handles[3]);
+  xTaskCreate(ota_task, "ota_task", 8192, NULL, 5, NULL);
 
   configTzTime(MY_TIMEZONE, NTP_SERVER, NTP_SERVER_FALLBACK);
   // boot_message("TEST SCREEN!");
@@ -970,7 +1016,6 @@ void draw_clock(bool night)
 // ---- LOOP ----
 void loop()
 {
-
   static const uint32_t frameDelayMs = 1000 / 100;
   static uint32_t lastFrameTime = 0;
   static int someVariableHoldingFPS = 0;

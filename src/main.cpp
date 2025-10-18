@@ -788,19 +788,33 @@ void draw_calendar()
   getLocalTime(&timeinfo);
 
   dma_display->setCursor(CALENDAR_OFFSET_X, CALENDAR_OFFSET_Y);
-  // dma_display->print("Calendar");
 
-  int year = timeinfo.tm_year + 1900;
-  int month = timeinfo.tm_mon + 1;
+  int current_year = timeinfo.tm_year + 1900;
+  int current_month = timeinfo.tm_mon + 1;
+  int current_day = timeinfo.tm_mday;
 
-  int days = days_in_month(year, month);
-  int start = first_weekday_of_month(year, month);
+  // Calculate previous and next month
+  int prev_month = current_month - 1;
+  int prev_year = current_year;
+  if (prev_month < 1)
+  {
+    prev_month = 12;
+    prev_year = current_year - 1;
+  }
+
+  int next_month = current_month + 1;
+  int next_year = current_year;
+  if (next_month > 12)
+  {
+    next_month = 1;
+    next_year = current_year + 1;
+  }
+
+  int current_days = days_in_month(current_year, current_month);
+  int prev_days = days_in_month(prev_year, prev_month);
+  int start_weekday = first_weekday_of_month(current_year, current_month);
 
   dma_display->setTextSize(1);
-
-  int day = 1;
-  int row = 0;
-  int col = start;
 
   // Draw weekdays at the top
   for (int i = 0; i < 7; i++)
@@ -812,31 +826,84 @@ void draw_calendar()
     dma_display->printf(c);
   }
 
-  row++;
+  // Draw calendar days (6 rows × 7 columns = 42 cells)
+  int total_cells = 42;
+  int day_counter = 1;
 
-  while (day <= days)
+  for (int cell = 0; cell < total_cells; cell++)
   {
+    int row = cell / 7 + 1; // +1 because row 0 is weekdays
+    int col = cell % 7;
+
     int x = CALENDAR_OFFSET_X + col * CALENDAR_CELL_W;
     int y = CALENDAR_OFFSET_Y + row * CALENDAR_CELL_H;
 
-    dma_display->setTextColor(myWHITE);
-    dma_display->setCursor(x + 1, y + 6);
-    uint16_t textColor = myWHITE;
-    if (day_colors.count(day))
+    int display_day;
+    bool is_current_month = false;
+    bool is_prev_month = false;
+    bool is_next_month = false;
+
+    // Determine which month this cell belongs to
+    if (cell < start_weekday)
     {
-      uint16_t bg_color = day_colors[day];
-      if (SLEEP_CLOCK)
-      {
-        bg_color = brightenDown(bg_color);
-        dma_display->drawRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, bg_color);
-      }
-      else
-      {
-        dma_display->fillRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, bg_color);
-      }
-      textColor = useBlackText(bg_color) ? myBLACK : myWHITE;
+      // Previous month days
+      display_day = prev_days - start_weekday + cell + 1;
+      is_prev_month = true;
     }
-    if (timeinfo.tm_mday == day)
+    else if (cell < start_weekday + current_days)
+    {
+      // Current month days
+      display_day = cell - start_weekday + 1;
+      is_current_month = true;
+    }
+    else
+    {
+      // Next month days
+      display_day = cell - start_weekday - current_days + 1;
+      is_next_month = true;
+    }
+
+    dma_display->setCursor(x + 1, y + 6);
+
+    uint16_t textColor = myWHITE;
+    bool is_today = false;
+
+    // Handle coloring and highlighting only for current month
+    if (is_current_month)
+    {
+      is_today = (display_day == current_day);
+
+      if (day_colors.count(display_day))
+      {
+        uint16_t bg_color = day_colors[display_day];
+        if (SLEEP_CLOCK)
+        {
+          bg_color = brightenDown(bg_color);
+          dma_display->drawRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, bg_color);
+        }
+        else
+        {
+          dma_display->fillRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, bg_color);
+        }
+        textColor = useBlackText(bg_color) ? myBLACK : myWHITE;
+      }
+    }
+
+    // Set text color based on day type
+    if (is_prev_month || is_next_month)
+    {
+      dma_display->setTextColor(myGRAY);
+    }
+    else if (col >= 5)
+    {
+      dma_display->setTextColor(myGRAY);
+    }
+    else
+    {
+      dma_display->setTextColor(textColor);
+    }
+
+    if (is_today)
     {
       unsigned long now = millis();
       if (now - lastBlink >= blinkInterval)
@@ -848,23 +915,8 @@ void draw_calendar()
       uint16_t color = blinkState ? myRED : myGRAY;
       dma_display->drawRoundRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, 2, color);
     }
-    if (col >= 5)
-    {
-      dma_display->setTextColor(myGRAY);
-    }
-    else
-    {
-      dma_display->setTextColor(textColor);
-    }
-    dma_display->print(day);
 
-    col++;
-    if (col >= 7)
-    {
-      col = 0;
-      row++;
-    }
-    day++;
+    dma_display->printf("%2d", display_day);
   }
 }
 

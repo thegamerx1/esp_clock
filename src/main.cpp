@@ -18,9 +18,11 @@
 #include "esp_pm.h"
 #include "esp_wifi.h"
 #include "utils.h"
+#include <mutex>
+#include <queue>
 
-#define NTP_SERVER "212.230.255.2"
-#define NTP_SERVER_FALLBACK "192.168.25.72"
+#define NTP_SERVER "192.168.25.72"
+#define NTP_SERVER_FALLBACK "212.230.255.2"
 #define MY_TIMEZONE "CET-1CEST,M3.5.0,M10.5.0/3"
 #define MAX_TASKS 6
 
@@ -86,16 +88,17 @@ const int mqtt_port = 8883;
 const char *mqtt_user = MQTT_USER;
 const char *mqtt_pass = MQTT_PASS;
 
-const char *mqtt_brightness_topic = "home/esp1/brightness";
-const char *mqtt_animation_topic = "home/esp1/animation";
-const char *mqtt_power_topic = "home/esp1/power";
-const char *mqtt_show_clock_on_sleep_topic = "home/esp1/show_clock_on_sleep";
-const char *mqtt_animonly_topic = "home/esp1/animonly";
-const char *mqtt_rgbborder_topic = "home/esp1/rgbborder";
-const char *mqtt_disable_anims_topic = "home/esp1/animdisable";
-const char *mqtt_calendar_topic = "home/esp1/calendar";
-const char *mqtt_dht_topic = "home/esp1/dht22";
-const char *mqtt_dht_2_topic = "home/rpi/dht22";
+const char *mqtt_topic_brightness = "home/esp1/brightness";
+const char *mqtt_topic_animation = "home/esp1/animation";
+const char *mqtt_topic_power = "home/esp1/power";
+const char *mqtt_topic_show_clock_on_sleep = "home/esp1/show_clock_on_sleep";
+const char *mqtt_topic_animonly = "home/esp1/animonly";
+const char *mqtt_topic_rgbborder = "home/esp1/rgbborder";
+const char *mqtt_topic_disable_anims = "home/esp1/animdisable";
+const char *mqtt_topic_calendar = "home/esp1/calendar";
+const char *mqtt_topic_dht = "home/esp1/dht22";
+const char *mqtt_topic_dht_2 = "home/rpi/dht22";
+const char *mqtt_topic_log = "home/esp1/log";
 
 std::map<String, uint16_t> date_colors;
 
@@ -137,6 +140,76 @@ void set_palette(bool night)
     myRED = dma_display->color565(242, 0, 0);
     myGREEN = dma_display->color565(0, 255, 0);
     myBLUE = dma_display->color565(0, 128, 255);
+  }
+}
+
+std::queue<std::string> message_queue;
+std::mutex queue_mutex;
+bool publish_task_running = false;
+bool mqtt_ready = false;
+void log_task(void *pvParameters)
+{
+  publish_task_running = true;
+  while (publish_task_running)
+  {
+    while (!mqtt_ready)
+    {
+      vTaskDelay(pdMS_TO_TICKS(500));
+    }
+    // Check if there are messages to publish
+    std::string message;
+    bool has_message = false;
+
+    {
+      std::lock_guard<std::mutex> lock(queue_mutex);
+      if (!message_queue.empty())
+      {
+        message = message_queue.front();
+        message_queue.pop();
+        has_message = true;
+      }
+    }
+
+    if (has_message)
+    {
+      if (mqttclient.connected())
+      {
+        mqttclient.publish(mqtt_topic_log, message.c_str());
+      }
+      // Small delay to prevent flooding the MQTT connection
+      vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    else
+    {
+      // No messages, wait a bit before checking again
+      vTaskDelay(pdMS_TO_TICKS(200));
+    }
+  }
+}
+
+void log_boot_message(const char *tag, const char *format, ...)
+{
+  va_list args;
+  char buffer[512];
+  printf("%s: ", tag);
+  va_start(args, format);
+  vprintf(format, args);
+  printf("\n");
+
+  int len = snprintf(buffer, sizeof(buffer), "%s: ", tag);
+  if (len > 0 && len < (int)sizeof(buffer))
+  {
+    vsnprintf(buffer + len, sizeof(buffer) - len, format, args);
+  }
+  va_end(args);
+
+  std::lock_guard<std::mutex> lock(queue_mutex);
+  if (message_queue.size() < 50)
+  {
+    std::string str(buffer);
+    if (str.length() > 100)
+      str = str.substr(0, 100);
+    message_queue.push(str);
   }
 }
 
@@ -195,7 +268,7 @@ void loadGifsFromDir(File dir)
     PANEL_FRAMES[category].push_back(frame);
     LOADED_ANIMATIONS++;
 
-    log_boot_message("GIF", "Loaded: %s (%d bytes)", path.c_str(), size);
+    // log_boot_message("GIF", "Loaded: %s (%d bytes)", path.c_str(), size);
   }
 }
 
@@ -306,9 +379,9 @@ void restore_clock_and_resume_tasks()
 void mqtt_callback(char *topic, byte *payload, unsigned int length)
 {
   log_boot_message("MQTT", "Received topic: %s", topic);
-  payload[length] = '\0'; // null-terminate
+  payload[length] = '\0';
   String val = String((char *)payload);
-  if (strcmp(topic, mqtt_brightness_topic) == 0)
+  if (strcmp(topic, mqtt_topic_brightness) == 0)
   {
     int brightness = val.toInt();
     if (!POWER_SAVING)
@@ -317,7 +390,7 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     }
     PANEL_BRIGHTNESS = brightness;
   }
-  else if (strcmp(topic, mqtt_dht_2_topic) == 0)
+  else if (strcmp(topic, mqtt_topic_dht_2) == 0)
   {
     JsonDocument doc;
     deserializeJson(doc, val);
@@ -326,7 +399,7 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     dht_2_humidity = doc["humidity"];
     xSemaphoreGive(dht_mutex);
   }
-  else if (strcmp(topic, mqtt_power_topic) == 0)
+  else if (strcmp(topic, mqtt_topic_power) == 0)
   {
     POWER_MODE = (val == "on");
     if (POWER_MODE && !SLEEP_CLOCK)
@@ -339,14 +412,14 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     }
     activated_power_save = false;
   }
-  else if (strcmp(topic, mqtt_animonly_topic) == 0)
+  else if (strcmp(topic, mqtt_topic_animonly) == 0)
   {
     ANIM_ONLY_MODE = (val == "on");
   }
-  else if (strcmp(topic, mqtt_calendar_topic) == 0)
+  else if (strcmp(topic, mqtt_topic_calendar) == 0)
   {
     log_boot_message("CAL", "Got calendar");
-    log_boot_message("CAL", "%s", val);
+    log_boot_message("CAL", "%s", val.c_str());
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, payload, length);
     if (err)
@@ -366,15 +439,15 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
       log_boot_message("CAL", "Updated");
     }
   }
-  else if (strcmp(topic, mqtt_rgbborder_topic) == 0)
+  else if (strcmp(topic, mqtt_topic_rgbborder) == 0)
   {
     ANIM_RGBBORDER = (val == "on");
   }
-  else if (strcmp(topic, mqtt_disable_anims_topic) == 0)
+  else if (strcmp(topic, mqtt_topic_disable_anims) == 0)
   {
     ANIM_DISABLE = (val == "on");
   }
-  else if (strcmp(topic, mqtt_show_clock_on_sleep_topic) == 0)
+  else if (strcmp(topic, mqtt_topic_show_clock_on_sleep) == 0)
   {
     SLEEP_CLOCK = (val == "on");
     set_palette(SLEEP_CLOCK);
@@ -388,7 +461,7 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     }
     activated_power_save = false;
   }
-  else if (strcmp(topic, mqtt_animation_topic) == 0)
+  else if (strcmp(topic, mqtt_topic_animation) == 0)
   {
     log_boot_message("GIF", "Setting animation category to: %s", val);
     if (!PANEL_FRAMES.count(val))
@@ -407,18 +480,40 @@ void mqtt_task(void *pvParameters)
   {
     while (!mqttclient.connected())
     {
+      mqtt_ready = false;
       log_boot_message("MQTT", "Reconnecting to mqtt.");
       if (mqttclient.connect("ESP32Client", mqtt_user, mqtt_pass))
       {
-        assert(mqttclient.subscribe(mqtt_dht_2_topic));
-        if (!mqttclient.subscribe(mqtt_brightness_topic))
+        mqttclient.subscribe(mqtt_topic_dht_2);
+        if (!mqttclient.subscribe(mqtt_topic_power))
         {
-          mqttclient.publish(mqtt_brightness_topic, String(DEFAULT_BRIGHTNESS).c_str(), true);
-          assert(mqttclient.subscribe(mqtt_brightness_topic));
+          mqttclient.publish(mqtt_topic_power, "on", true);
         }
-        assert(mqttclient.subscribe("home/esp1/#"));
-        mqttclient.unsubscribe(mqtt_dht_topic);
-        // mqttclient.publish(mqtt_calendar_topic, "{\"colors\": {\"1\": 64608, \"2\": 6611, \"3\": 6611, \"6\": 6611}}", true);
+        if (!mqttclient.subscribe(mqtt_topic_animonly))
+        {
+          mqttclient.publish(mqtt_topic_power, "off", true);
+        }
+        mqttclient.subscribe(mqtt_topic_calendar);
+        if (!mqttclient.subscribe(mqtt_topic_rgbborder))
+        {
+          mqttclient.publish(mqtt_topic_rgbborder, "off", true);
+        }
+        if (!mqttclient.subscribe(mqtt_topic_disable_anims))
+        {
+          mqttclient.publish(mqtt_topic_rgbborder, "off", true);
+        }
+        if (!mqttclient.subscribe(mqtt_topic_show_clock_on_sleep))
+        {
+          mqttclient.publish(mqtt_topic_rgbborder, "off", true);
+        }
+        if (!mqttclient.subscribe(mqtt_topic_animation))
+        {
+          mqttclient.publish(mqtt_topic_rgbborder, currentFrame.c_str(), true);
+        }
+        if (!mqttclient.subscribe(mqtt_topic_brightness))
+        {
+          mqttclient.publish(mqtt_topic_brightness, String(DEFAULT_BRIGHTNESS).c_str(), true);
+        }
         log_boot_message("MQTT", "Connected to mqtt.");
         break;
       };
@@ -426,13 +521,14 @@ void mqtt_task(void *pvParameters)
     }
 
     mqttclient.loop();
+    mqtt_ready = true;
     if (POWER_SAVING)
     {
       vTaskDelay(pdMS_TO_TICKS(500));
     }
     else
     {
-      vTaskDelay(pdMS_TO_TICKS(20));
+      vTaskDelay(pdMS_TO_TICKS(10));
     }
   }
 }
@@ -448,7 +544,7 @@ void mqtt_publish(void *pvParameters)
       xSemaphoreTake(dht_mutex, portMAX_DELAY);
       payload = "{\"temperature\":" + String(dht_temperature) + ",\"humidity\":" + String(dht_humidity) + "}";
       xSemaphoreGive(dht_mutex);
-      mqttclient.publish(mqtt_dht_topic, payload.c_str());
+      mqttclient.publish(mqtt_topic_dht, payload.c_str());
     }
     if (POWER_SAVING)
     {
@@ -581,8 +677,8 @@ void gif_task(void *pvParameters)
     log_boot_message("GIF", "Playing gif: %s, ID: %d", currentFrame.c_str(), played_gif);
     gif.open(myframes[played_gif].data, myframes[played_gif].size, GIFDraw);
 
-    int frameDelay = 0; // store delay for the last frame
-    int then = 0;       // store overall delay
+    int frameDelay = 0;
+    int then = 0;
 
     while (gif.playFrame(true, &frameDelay))
     {
@@ -593,15 +689,9 @@ void gif_task(void *pvParameters)
       gif_index++;
       vTaskDelay(pdMS_TO_TICKS(frameDelay));
 
-      // dma_display->setTextSize(1);
-      // dma_display->setTextColor(myWHITE);
-      // dma_display->setCursor(0, 53);
-      // dma_display->flipDMABuffer();
-
       then += frameDelay;
       if (then > maxGifDuration)
-      { // avoid being trapped in infinite GIF's
-        // log_w("Broke the GIF loop, max duration exceeded");
+      {
         break;
       }
     }
@@ -619,15 +709,15 @@ void boot_message(String message)
   static int index = 0;
   static int count = 0;
 
-  lines[index] = message;               // Add new message at current index
-  index = (index + 1) % MAX_BOOT_LINES; // Move index, wrap around
+  lines[index] = message;
+  index = (index + 1) % MAX_BOOT_LINES;
   if (count < MAX_BOOT_LINES)
-    count++; // Keep track of how many lines stored
+    count++;
 
   dma_display->clearScreen();
-  dma_display->setCursor(0, 0);
+  dma_display->setCursor(0, 5);
 
-  int start = (count == MAX_BOOT_LINES) ? index : 0; // Start printing from oldest line
+  int start = (count == MAX_BOOT_LINES) ? index : 0;
   for (int i = 0; i < count; i++)
   {
     int lineIndex = (start + i) % MAX_BOOT_LINES;
@@ -639,26 +729,25 @@ void boot_message(String message)
 void ota_task(void *pvParameters)
 {
   ArduinoOTA.setPasswordHash(OTA_UPDATE_PASS);
-  ArduinoOTA.begin();
   ArduinoOTA.onStart([]()
                      {
-                       String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
-                                              log_boot_message("OTA", "Start updating %s", type);
-                       pause_tasks();
-                       TaskHandle_t loopHandle = xTaskGetHandle("loopTask");
+                      String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
+                      log_boot_message("OTA", "Start updating %s", type);
+                      pause_tasks();
+                      TaskHandle_t loopHandle = xTaskGetHandle("loopTask");
 
-                       if (loopHandle != NULL) {
-                         vTaskSuspend(loopHandle);
-                        }
-                        dma_display->clearScreen();
-                        boot_message("UPDATING!");
-                        dma_display->stopDMAoutput(); });
+                      if (loopHandle != NULL) {
+                        vTaskSuspend(loopHandle);
+                      }
+                      dma_display->clearScreen();
+                      dma_display->stopDMAoutput(); });
   ArduinoOTA.onEnd([]()
                    { log_boot_message("OTA", "End"); });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
                         { log_boot_message("OTA", "Progress: %u%%\r", (progress / (total / 100))); });
   ArduinoOTA.onError([](ota_error_t error)
                      { log_boot_message("OTA", "Error[%u]: ", error); esp_restart(); });
+  ArduinoOTA.begin();
   while (1)
   {
     ArduinoOTA.handle();
@@ -705,11 +794,16 @@ void configure_panel(bool double_buff)
 void setup()
 {
   Serial.begin(115200);
+  log_boot_message("ESP", "Starting!");
+  log_boot_message("ESP", "Firmware compiled on %s at %s\n", __DATE__, __TIME__);
   configure_panel(true);
-
-  boot_message("WIFI!");
   dma_display->setFont(&TomThumb);
 
+  boot_message("Firmware:");
+  boot_message(String(" ") + __DATE__);
+  boot_message(String(" ") + __TIME__);
+
+  boot_message("WIFI!");
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
   {
     log_boot_message("ESP", "STA Failed to configure");
@@ -735,11 +829,13 @@ void setup()
   boot_message("TASKS!");
   dht_mutex = xSemaphoreCreateMutex();
   task_handles[0] = NULL;
-  xTaskCreate(dht_task, "dht_task", 8192, NULL, 5, &task_handles[0]);
+
+  xTaskCreate(dht_task, "dht_task", 8192, NULL, 1, &task_handles[0]);
   xTaskCreate(mqtt_task, "mqtt_task", 8192, NULL, 5, &task_handles[1]);
-  xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 5, &task_handles[2]);
-  xTaskCreate(gif_task, "gif_task", 2048, NULL, 5, &task_handles[3]);
+  xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 3, &task_handles[2]);
+  xTaskCreate(gif_task, "gif_task", 4096, NULL, 2, &task_handles[3]);
   xTaskCreate(ota_task, "ota_task", 8192, NULL, 5, NULL);
+  xTaskCreate(log_task, "log_task", 5012, NULL, 1, &task_handles[4]);
 
   configTzTime(MY_TIMEZONE, NTP_SERVER, NTP_SERVER_FALLBACK);
   // boot_message("TEST SCREEN!");

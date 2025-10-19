@@ -40,16 +40,6 @@ int first_weekday_of_month(int year, int month)
 	return (h + 5) % 7;
 }
 
-void log_boot_message(const char *tag, const char *format, ...)
-{
-	va_list args;
-	printf("%s: ", tag);
-	va_start(args, format);
-	vprintf(format, args);
-	va_end(args);
-	printf("\n");
-}
-
 uint16_t rainbow565(uint8_t pos)
 {
 	uint8_t r, g, b;

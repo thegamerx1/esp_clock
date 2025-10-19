@@ -22,7 +22,7 @@ int days_in_month(int year, int month);
 // Returns: 0=Monday, 1=Tuesday, ..., 6=Sunday
 int first_weekday_of_month(int year, int month);
 
-void log_boot_message(const char *tag, const char *format, ...);
+// void log_boot_message(const char *tag, const char *format, ...);
 uint16_t rainbow565(uint8_t pos);
 
 int round_float(float v);

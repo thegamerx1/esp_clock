@@ -110,8 +110,8 @@ bool SLEEP_CLOCK = false;
 DHT dht(DHTPIN, DHTTYPE);
 
 SemaphoreHandle_t dht_mutex;
-float dht_temperature = 0;
-float dht_humidity = 0;
+float dht_temperature = -99;
+float dht_humidity = -99;
 float dht_2_temperature = 0;
 float dht_2_humidity = 0;
 
@@ -538,7 +538,7 @@ void mqtt_publish(void *pvParameters)
   vTaskDelay(pdMS_TO_TICKS(2500));
   while (1)
   {
-    if (mqttclient.connected())
+    if (mqttclient.connected() && dht_temperature > -99 && dht_humidity > -99)
     {
       String payload;
       xSemaphoreTake(dht_mutex, portMAX_DELAY);

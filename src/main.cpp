@@ -884,7 +884,7 @@ void draw_dht_avg()
       hum_sum += dht_2_humidity;
       count = 2;
     }
-    dma_display->setCursor(3, 5);
+    dma_display->setCursor(3, 7);
     draw_dht(round_float(temp_sum / count), round_float(hum_sum / count));
     // dma_display->setCursor(5, 12);
     // draw_dht((int)dht_2_temperature, (int)dht_2_humidity);
@@ -916,8 +916,8 @@ void draw_ram()
   dma_display->printf("%2.f%%\n", psfreePercent);
 }
 
-#define CALENDAR_OFFSET_X 65
-#define CALENDAR_OFFSET_Y -1
+#define CALENDAR_OFFSET_X 64
+#define CALENDAR_OFFSET_Y 1
 #define CALENDAR_CELL_W 9
 #define CALENDAR_CELL_H 8
 void draw_calendar()
@@ -967,7 +967,7 @@ void draw_calendar()
     char c[3] = {DAYS[i][0], DAYS[i][1], '\0'};
     dma_display->printf(c);
   }
-  dma_display->drawFastHLine(CALENDAR_OFFSET_X, 6, 64 - 1, myWHITE);
+  dma_display->drawFastHLine(CALENDAR_OFFSET_X, CALENDAR_OFFSET_Y + 6, 64 - 1, myWHITE);
 
   int total_cells = 42;
 
@@ -1073,7 +1073,7 @@ void draw_calendar()
   }
 }
 
-#define CLOCK_OFFSET_Y 28
+#define CLOCK_OFFSET_Y 30
 void draw_clock(bool night)
 {
   struct tm timeinfo;

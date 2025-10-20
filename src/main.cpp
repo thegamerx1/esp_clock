@@ -1069,7 +1069,21 @@ void draw_calendar()
       }
 
       uint16_t color = blinkState ? myRED : myGRAY;
-      dma_display->drawRoundRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, 2, color);
+      uint crosshair_y0 = y - 1;
+      uint crosshair_y1 = y + CALENDAR_CELL_H - 1;
+      uint crosshair_x1 = x + CALENDAR_CELL_W - 1;
+      // Top
+      dma_display->drawFastHLine(x, crosshair_y0, CALENDAR_CELL_W, color);
+      // dma_display->drawFastHLine(crosshair_x1 - 3, crosshair_y0, 3, color);
+      dma_display->drawFastVLine(x, crosshair_y0, 4, color);
+      dma_display->drawFastVLine(crosshair_x1, crosshair_y0, 4, color);
+
+      // Bottom
+      dma_display->drawFastHLine(x, crosshair_y1, CALENDAR_CELL_W, color);
+      // dma_display->drawFastHLine(crosshair_x1 - 3, crosshair_y1, 3, color);
+      dma_display->drawFastVLine(x, crosshair_y1 - 3, 3, color);
+      dma_display->drawFastVLine(crosshair_x1, crosshair_y1 - 3, 3, color);
+      // dma_display->drawRoundRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, 2, color);
     }
 
     if (is_prev_month || is_next_month)

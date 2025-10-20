@@ -1236,18 +1236,16 @@ void loop()
 
   draw_clock(false);
 
-  if (PANEL_DUAL)
-  {
-    draw_calendar();
-  }
+#if PANEL_DUAL
+  draw_calendar();
+#endif
 
-  if (PANEL_TRIPLE)
+#if PANEL_TRIPLE
+  if (!ANIM_DISABLE && !SLEEP_CLOCK)
   {
-    if (!ANIM_DISABLE)
-    {
-      dma_display->drawRGBBitmap(64 * 2, 0, GIF_BUFFER, 64, 64);
-    }
+    dma_display->drawRGBBitmap(64 * 2, 0, GIF_BUFFER, 64, 64);
   }
+#endif
 
   // RGB BORDER
   if (ANIM_RGBBORDER)

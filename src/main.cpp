@@ -63,7 +63,6 @@ std::map<String, std::vector<Frame>> PANEL_FRAMES;
 String currentFrame = "pharmacy";
 
 MatrixPanel_I2S_DMA *dma_display = nullptr;
-uint16_t myBLACK, myWHITE, myRED, myGREEN, myBLUE, myGRAY, myLightGRAY;
 uint16_t *GIF_BUFFER;
 uint16_t gif_index;
 uint8_t PANEL_BRIGHTNESS;
@@ -100,7 +99,7 @@ const char *mqtt_topic_dht = "home/esp1/dht22";
 const char *mqtt_topic_dht_2 = "home/rpi/dht22";
 const char *mqtt_topic_log = "home/esp1/log";
 
-std::map<String, uint16_t> date_colors;
+std::map<String, uint8_t> date_colors;
 
 bool ANIM_DISABLE = true;
 bool ANIM_RGBBORDER = false;
@@ -119,6 +118,23 @@ WiFiClientSecure espClient;
 PubSubClient mqttclient(espClient);
 TaskHandle_t task_handles[MAX_TASKS] = {NULL};
 
+uint16_t myBLACK, myWHITE, myRED, myGREEN, myBLUE, myGRAY, myLightGRAY, myDarkRED, myDarkBLUE, myOrange;
+const uint16_t calendar_color(int index)
+{
+  switch (index)
+  {
+
+  case 1:
+    return myDarkBLUE;
+  case 2:
+    return myDarkRED;
+  case 3:
+    return myOrange;
+  default:
+    return myRED;
+  }
+}
+
 void set_palette(bool night)
 {
   if (night)
@@ -130,6 +146,10 @@ void set_palette(bool night)
     myRED = dma_display->color565(40, 5, 0);
     myGREEN = dma_display->color565(0, 40, 0);
     myBLUE = dma_display->color565(0, 0, 40);
+    // Calendar colors
+    myDarkRED = dma_display->color565(50, 0, 0);
+    myOrange = dma_display->color565(80, 50, 10);
+    myDarkBLUE = dma_display->color565(10, 15, 40);
   }
   else
   {
@@ -140,6 +160,10 @@ void set_palette(bool night)
     myRED = dma_display->color565(242, 0, 0);
     myGREEN = dma_display->color565(0, 255, 0);
     myBLUE = dma_display->color565(0, 128, 255);
+    // Calendar colors
+    myDarkRED = dma_display->color565(181, 0, 0);
+    myOrange = dma_display->color565(247, 165, 42);
+    myDarkBLUE = dma_display->color565(24, 57, 154);
   }
 }
 
@@ -433,8 +457,7 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
       for (JsonPair p : colors)
       {
         String date = p.key().c_str();
-        uint16_t color = p.value().as<uint16_t>();
-        date_colors[date] = color;
+        date_colors[date] = p.value().as<uint8_t>();
       }
       log_boot_message("CAL", "Updated");
     }
@@ -1022,7 +1045,7 @@ void draw_calendar()
 
     if (date_colors.find(date_str) != date_colors.end())
     {
-      uint16_t bg_color = date_colors[date_str];
+      uint16_t bg_color = calendar_color(date_colors[date_str]);
       if (SLEEP_CLOCK)
       {
         bg_color = brightenDown(bg_color);

@@ -68,7 +68,7 @@ uint16_t gif_index;
 uint8_t PANEL_BRIGHTNESS;
 bool POWER_MODE = true;
 bool POWER_SAVING = false;
-bool activated_power_save = false;
+bool activate_power_save_fn = false;
 
 AnimatedGIF gif;
 
@@ -360,19 +360,19 @@ void pause_tasks_and_reduce_clock()
 {
   log_boot_message("ESP", "Entering power save mode");
 
-  pause_tasks();
+  // pause_tasks();
 
   // Lower CPU frequency to 80MHz (from default 240MHz)
+  dma_display->setBrightness(0);
+  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+
+  POWER_SAVING = true;
+  activate_power_save_fn = true;
   esp_pm_config_esp32s3_t pm_config = {
       .max_freq_mhz = 80,
       .min_freq_mhz = 80,
       .light_sleep_enable = true};
   esp_pm_configure(&pm_config);
-
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-  POWER_SAVING = true;
-  activated_power_save = false;
-  dma_display->setBrightness(0);
 }
 
 void restore_clock_and_resume_tasks()
@@ -388,7 +388,7 @@ void restore_clock_and_resume_tasks()
 
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
   POWER_SAVING = false;
-  activated_power_save = false;
+  activate_power_save_fn = true;
 
   for (int i = 0; i < MAX_TASKS; i++)
   {
@@ -434,7 +434,7 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     {
       pause_tasks_and_reduce_clock();
     }
-    activated_power_save = false;
+    activate_power_save_fn = true;
   }
   else if (strcmp(topic, mqtt_topic_animonly) == 0)
   {
@@ -482,7 +482,7 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     {
       restore_clock_and_resume_tasks();
     }
-    activated_power_save = false;
+    activate_power_save_fn = true;
   }
   else if (strcmp(topic, mqtt_topic_animation) == 0)
   {
@@ -547,7 +547,7 @@ void mqtt_task(void *pvParameters)
     mqtt_ready = true;
     if (POWER_SAVING)
     {
-      vTaskDelay(pdMS_TO_TICKS(500));
+      vTaskDelay(pdMS_TO_TICKS(400));
     }
     else
     {
@@ -1156,11 +1156,11 @@ void loop()
   static unsigned long lastMillis = 0;
   static int frames = 0;
 
-  if (POWER_SAVING && !activated_power_save)
+  if (POWER_SAVING && activate_power_save_fn)
   {
     dma_display->clearScreen();
     dma_display->setBrightness8(0);
-    activated_power_save = true;
+    activate_power_save_fn = false;
   }
   if (!POWER_MODE)
   {

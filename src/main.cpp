@@ -112,8 +112,8 @@ DHT dht(DHTPIN, DHTTYPE);
 SemaphoreHandle_t dht_mutex;
 float dht_temperature = -99;
 float dht_humidity = -99;
-float dht_2_temperature = 0;
-float dht_2_humidity = 0;
+float dht_2_temperature = -99;
+float dht_2_humidity = -99;
 
 WiFiClientSecure espClient;
 PubSubClient mqttclient(espClient);
@@ -662,7 +662,7 @@ void gif_task(void *pvParameters)
     }
 
     gif_index++;
-    memset(GIF_BUFFER, 0, 64 * 64 * 2);
+    // memset(GIF_BUFFER, 0, 64 * 64 * 2);
 
     auto &myframes = PANEL_FRAMES[currentFrame];
     if (myframes.empty())
@@ -774,7 +774,7 @@ void configure_panel(bool double_buff)
 
   mxconfig.double_buff = double_buff;
   mxconfig.clkphase = false;
-  // mxconfig.latch_blanking = 2;
+  mxconfig.latch_blanking = 35;
   mxconfig.min_refresh_rate = 90;
   // mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
 
@@ -878,7 +878,7 @@ void draw_dht_avg()
     float temp_sum = dht_temperature;
     float hum_sum = dht_humidity;
     int count = 1;
-    if (dht_2_temperature >= 0 && dht_2_humidity >= 0)
+    if (dht_2_temperature > -99 && dht_2_humidity > -99)
     {
       temp_sum += dht_2_temperature;
       hum_sum += dht_2_humidity;

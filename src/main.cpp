@@ -90,7 +90,7 @@ const char *mqtt_pass = MQTT_PASS;
 const char *mqtt_topic_brightness = "home/esp1/brightness";
 const char *mqtt_topic_animation = "home/esp1/animation";
 const char *mqtt_topic_power = "home/esp1/power";
-const char *mqtt_topic_show_clock_on_sleep = "home/esp1/show_clock_on_sleep";
+const char *mqtt_topic_sleep_mode = "home/esp1/sleep_mode";
 const char *mqtt_topic_animonly = "home/esp1/animonly";
 const char *mqtt_topic_rgbborder = "home/esp1/rgbborder";
 const char *mqtt_topic_disable_anims = "home/esp1/animdisable";
@@ -470,7 +470,7 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   {
     ANIM_DISABLE = (val == "on");
   }
-  else if (strcmp(topic, mqtt_topic_show_clock_on_sleep) == 0)
+  else if (strcmp(topic, mqtt_topic_sleep_mode) == 0)
   {
     SLEEP_CLOCK = (val == "on");
     set_palette(SLEEP_CLOCK);
@@ -525,7 +525,7 @@ void mqtt_task(void *pvParameters)
         {
           mqttclient.publish(mqtt_topic_rgbborder, "off", true);
         }
-        if (!mqttclient.subscribe(mqtt_topic_show_clock_on_sleep))
+        if (!mqttclient.subscribe(mqtt_topic_sleep_mode))
         {
           mqttclient.publish(mqtt_topic_rgbborder, "off", true);
         }

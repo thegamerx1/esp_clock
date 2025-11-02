@@ -145,7 +145,7 @@ void set_palette(bool night)
     myLightGRAY = myWHITE;
     myRED = dma_display->color565(40, 5, 0);
     myGREEN = dma_display->color565(0, 40, 0);
-    myBLUE = dma_display->color565(0, 0, 40);
+    myBLUE = dma_display->color565(5, 40, 40);
     // Calendar colors
     myDarkRED = dma_display->color565(50, 0, 0);
     myOrange = dma_display->color565(80, 50, 10);
@@ -159,7 +159,7 @@ void set_palette(bool night)
     myLightGRAY = dma_display->color565(50, 50, 50);
     myRED = dma_display->color565(242, 0, 0);
     myGREEN = dma_display->color565(0, 255, 0);
-    myBLUE = dma_display->color565(0, 128, 255);
+    myBLUE = dma_display->color565(60, 150, 255);
     // Calendar colors
     myDarkRED = dma_display->color565(181, 0, 0);
     myOrange = dma_display->color565(247, 165, 42);
@@ -777,7 +777,7 @@ void ota_task(void *pvParameters)
 
     if (POWER_SAVING)
     {
-      vTaskDelay(pdMS_TO_TICKS(61000));
+      vTaskDelay(pdMS_TO_TICKS(5000));
     }
     else
     {

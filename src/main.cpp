@@ -178,12 +178,13 @@ void log_task(void *pvParameters)
 
     if (has_message)
     {
-      if (mqttclient.connected())
+      while (!mqttclient.connected())
       {
-        mqttclient.publish(mqtt_topic_log, message.c_str());
+        vTaskDelay(pdMS_TO_TICKS(100));
       }
       // Small delay to prevent flooding the MQTT connection
       vTaskDelay(pdMS_TO_TICKS(100));
+mqttclient.publish(mqtt_topic_log, message.c_str());
     }
     else
     {
@@ -718,12 +719,17 @@ void boot_message(String message)
   index = (index + 1) % MAX_BOOT_LINES;
   if (count < MAX_BOOT_LINES)
     count++;
+  int start = (count == MAX_BOOT_LINES) ? index : 0;
+
+  if (!dma_display)
+  {
+    return;
+  }
 
   dma_display->clearScreen();
   dma_display->setCursor(0, 5);
 
-  int start = (count == MAX_BOOT_LINES) ? index : 0;
-  for (int i = 0; i < count; i++)
+    for (int i = 0; i < count; i++)
   {
     int lineIndex = (start + i) % MAX_BOOT_LINES;
     dma_display->println(lines[lineIndex]);

@@ -865,6 +865,17 @@ void setup()
     return;
   }
   memset(GIF_BUFFER, 0, 64 * 64 * 2);
+
+  boot_message("WAIT CLOCK!");
+  while (true)
+  {
+
+    log_boot_message("ESP", "Wait clock...");
+    struct tm timeinfo;
+    if (getLocalTime(&timeinfo, 100))
+      break;
+    delay(50);
+  }
 }
 
 void draw_dht(int temp, int hum)
@@ -884,7 +895,6 @@ void draw_dht_avg()
 {
   if (xSemaphoreTake(dht_mutex, pdMS_TO_TICKS(10)) == pdTRUE)
   {
-
     float temp_sum = dht_temperature;
     float hum_sum = dht_humidity;
     int count = 1;
@@ -937,7 +947,7 @@ void draw_calendar()
   const unsigned long blinkInterval = 1000;
 
   struct tm timeinfo;
-  getLocalTime(&timeinfo);
+  getLocalTime(&timeinfo, 100);
 
   dma_display->setCursor(CALENDAR_OFFSET_X, CALENDAR_OFFSET_Y);
 
@@ -1101,7 +1111,7 @@ void draw_calendar()
 void draw_clock(bool night)
 {
   struct tm timeinfo;
-  getLocalTime(&timeinfo);
+  getLocalTime(&timeinfo, 100);
   char buf[9];
   strftime(buf, sizeof(buf), "%H:%M:%S", &timeinfo);
   String time = String(buf);

@@ -21,9 +21,6 @@
 #include <mutex>
 #include <queue>
 
-#define NTP_SERVER "192.168.25.72"
-#define NTP_SERVER_FALLBACK "212.230.255.2"
-#define MY_TIMEZONE "CET-1CEST,M3.5.0,M10.5.0/3"
 #define MAX_TASKS 6
 
 // ---- PANEL CONFIG ----
@@ -71,21 +68,6 @@ bool POWER_SAVING = false;
 bool activate_power_save_fn = false;
 
 AnimatedGIF gif;
-
-// ---- CONFIG ----
-const char *ssid = WIFI_SSID;
-const char *password = WIFI_PASS;
-
-IPAddress local_IP(192, 168, 25, 55);
-IPAddress gateway(192, 168, 25, 1);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress primaryDNS(192, 168, 25, 71);
-IPAddress secondaryDNS(8, 8, 4, 4);
-
-const char *mqtt_server = MQTT_SERVER;
-const int mqtt_port = 8883;
-const char *mqtt_user = MQTT_USER;
-const char *mqtt_pass = MQTT_PASS;
 
 const char *mqtt_topic_brightness = "home/esp1/brightness";
 const char *mqtt_topic_animation = "home/esp1/animation";
@@ -497,7 +479,7 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
 
 void mqtt_task(void *pvParameters)
 {
-  mqttclient.setServer(mqtt_server, mqtt_port);
+  mqttclient.setServer(MQTT_SERVER, MQTT_PORT);
   mqttclient.setCallback(mqtt_callback);
   while (1)
   {
@@ -505,7 +487,7 @@ void mqtt_task(void *pvParameters)
     {
       mqtt_ready = false;
       log_boot_message("MQTT", "Reconnecting to mqtt.");
-      if (mqttclient.connect("ESP32Client", mqtt_user, mqtt_pass))
+      if (mqttclient.connect("ESP32Client", MQTT_USER, MQTT_PASS))
       {
         mqttclient.subscribe(mqtt_topic_dht_2);
         if (!mqttclient.subscribe(mqtt_topic_power))
@@ -547,7 +529,7 @@ void mqtt_task(void *pvParameters)
     mqtt_ready = true;
     if (POWER_SAVING)
     {
-      vTaskDelay(pdMS_TO_TICKS(400));
+      vTaskDelay(pdMS_TO_TICKS(200));
     }
     else
     {
@@ -667,7 +649,7 @@ void GIFDraw(GIFDRAW *pDraw)
 
 void gif_task(void *pvParameters)
 {
-  while (!GIF_BUFFER)
+  while (!GIF_BUFFER || !dma_display)
   {
     vTaskDelay(pdMS_TO_TICKS(2500));
   }
@@ -777,11 +759,11 @@ void ota_task(void *pvParameters)
 
     if (POWER_SAVING)
     {
-      vTaskDelay(pdMS_TO_TICKS(5000));
+      vTaskDelay(pdMS_TO_TICKS(300));
     }
     else
     {
-      vTaskDelay(pdMS_TO_TICKS(200));
+      vTaskDelay(pdMS_TO_TICKS(50));
     }
   }
 }
@@ -797,7 +779,7 @@ void configure_panel(bool double_buff)
 
   mxconfig.double_buff = double_buff;
   mxconfig.clkphase = false;
-  mxconfig.latch_blanking = 35;
+  // mxconfig.latch_blanking = 2;
   mxconfig.min_refresh_rate = 90;
   // mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;
 
@@ -812,6 +794,7 @@ void configure_panel(bool double_buff)
   dma_display->setTextSize(1);     // size 1 == 8 pixels high
   dma_display->setTextWrap(false); // Don't wrap at end of line - will do ourselves
   dma_display->setTextColor(dma_display->color444(15, 15, 15));
+  dma_display->setFont(&TomThumb);
 }
 
 void setup()
@@ -819,8 +802,6 @@ void setup()
   Serial.begin(115200);
   log_boot_message("ESP", "Starting!");
   log_boot_message("ESP", "Firmware compiled on %s at %s\n", __DATE__, __TIME__);
-  configure_panel(true);
-  dma_display->setFont(&TomThumb);
 
   boot_message("Firmware:");
   boot_message(String(" ") + __DATE__);
@@ -831,7 +812,7 @@ void setup()
   {
     log_boot_message("ESP", "STA Failed to configure");
   }
-  WiFi.begin(ssid, password);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
   WiFi.setAutoReconnect(true);
   boot_message("LittleFS!");
   if (!LittleFS.begin(false))

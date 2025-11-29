@@ -75,6 +75,8 @@ const char *mqtt_topic_power = "home/esp1/power";
 const char *mqtt_topic_sleep_mode = "home/esp1/sleep_mode";
 const char *mqtt_topic_animonly = "home/esp1/animonly";
 const char *mqtt_topic_rgbborder = "home/esp1/rgbborder";
+const char *mqtt_topic_ledmode = "home/esp1/ledmode";
+const char *mqtt_topic_ledcolor = "home/esp1/ledcolor";
 const char *mqtt_topic_disable_anims = "home/esp1/animdisable";
 const char *mqtt_topic_calendar = "home/esp1/calendar";
 const char *mqtt_topic_dht = "home/esp1/dht22";
@@ -86,7 +88,9 @@ std::map<String, uint8_t> date_colors;
 bool ANIM_DISABLE = true;
 bool ANIM_RGBBORDER = false;
 bool ANIM_ONLY_MODE = false;
+bool LED_ONLY_MODE = false;
 bool SLEEP_CLOCK = false;
+uint16_t LED_ONLY_COLOR;
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -184,7 +188,7 @@ void log_task(void *pvParameters)
       }
       // Small delay to prevent flooding the MQTT connection
       vTaskDelay(pdMS_TO_TICKS(100));
-mqttclient.publish(mqtt_topic_log, message.c_str());
+      mqttclient.publish(mqtt_topic_log, message.c_str());
     }
     else
     {
@@ -327,6 +331,19 @@ void dht_task(void *pvParameters)
   }
 }
 
+void wifi_task(void *pvParameters)
+{
+  vTaskDelay(pdMS_TO_TICKS(500));
+  while (1)
+  {
+    if (WiFi.status() != WL_CONNECTED)
+    {
+      WiFi.reconnect();
+    }
+    vTaskDelay(pdMS_TO_TICKS(5000));
+  }
+}
+
 void pause_tasks()
 {
   log_boot_message("ESP", "Pausing tasks");
@@ -419,6 +436,20 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     }
     activate_power_save_fn = true;
   }
+  else if (strcmp(topic, mqtt_topic_sleep_mode) == 0)
+  {
+    SLEEP_CLOCK = (val == "on");
+    set_palette(SLEEP_CLOCK);
+    if (SLEEP_CLOCK)
+    {
+      pause_tasks_and_reduce_clock();
+    }
+    else if (POWER_MODE)
+    {
+      restore_clock_and_resume_tasks();
+    }
+    activate_power_save_fn = true;
+  }
   else if (strcmp(topic, mqtt_topic_animonly) == 0)
   {
     ANIM_ONLY_MODE = (val == "on");
@@ -432,6 +463,7 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     if (err)
     {
       log_boot_message("CAL", "Error calendar");
+      mqttclient.subscribe(mqtt_topic_calendar);
     }
     else
     {
@@ -449,23 +481,18 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   {
     ANIM_RGBBORDER = (val == "on");
   }
+  else if (strcmp(topic, mqtt_topic_ledcolor) == 0)
+  {
+
+    // LED_ONLY_COLOR = dma_display->color565(r,g,b);
+  }
+  else if (strcmp(topic, mqtt_topic_ledmode) == 0)
+  {
+    LED_ONLY_MODE = (val == "on");
+  }
   else if (strcmp(topic, mqtt_topic_disable_anims) == 0)
   {
     ANIM_DISABLE = (val == "on");
-  }
-  else if (strcmp(topic, mqtt_topic_sleep_mode) == 0)
-  {
-    SLEEP_CLOCK = (val == "on");
-    set_palette(SLEEP_CLOCK);
-    if (SLEEP_CLOCK)
-    {
-      pause_tasks_and_reduce_clock();
-    }
-    else if (POWER_MODE)
-    {
-      restore_clock_and_resume_tasks();
-    }
-    activate_power_save_fn = true;
   }
   else if (strcmp(topic, mqtt_topic_animation) == 0)
   {
@@ -515,6 +542,10 @@ void mqtt_task(void *pvParameters)
         if (!mqttclient.subscribe(mqtt_topic_animation))
         {
           mqttclient.publish(mqtt_topic_rgbborder, currentFrame.c_str(), true);
+        }
+        if (!mqttclient.subscribe(mqtt_topic_ledmode))
+        {
+          mqttclient.publish(mqtt_topic_ledmode, "off", true);
         }
         if (!mqttclient.subscribe(mqtt_topic_brightness))
         {
@@ -729,7 +760,7 @@ void boot_message(String message)
   dma_display->clearScreen();
   dma_display->setCursor(0, 5);
 
-    for (int i = 0; i < count; i++)
+  for (int i = 0; i < count; i++)
   {
     int lineIndex = (start + i) % MAX_BOOT_LINES;
     dma_display->println(lines[lineIndex]);
@@ -836,6 +867,13 @@ void setup()
   // espClient.setCACert(CA_CERT);
   espClient.setInsecure();
 
+  boot_message("PANEL!");
+  delay(200);
+  configure_panel(true);
+  LED_ONLY_COLOR = dma_display->color565(0, 0, 0);
+  LED_ONLY_COLOR = dma_display->color565(255, 0, 0);
+  delay(200);
+
   boot_message("TASKS!");
   dht_mutex = xSemaphoreCreateMutex();
   task_handles[0] = NULL;
@@ -844,13 +882,19 @@ void setup()
   xTaskCreate(mqtt_task, "mqtt_task", 8192, NULL, 5, &task_handles[1]);
   xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 3, &task_handles[2]);
   xTaskCreate(gif_task, "gif_task", 4096, NULL, 2, &task_handles[3]);
+  xTaskCreate(wifi_task, "wifi_task", 4096, NULL, 2, NULL);
   xTaskCreate(ota_task, "ota_task", 8192, NULL, 5, NULL);
   xTaskCreate(log_task, "log_task", 5012, NULL, 1, &task_handles[4]);
 
   configTzTime(MY_TIMEZONE, NTP_SERVER, NTP_SERVER_FALLBACK);
-  // boot_message("TEST SCREEN!");
-  // test_screen();
-  boot_message("OK!");
+
+  boot_message("WAIT SERVER!");
+  while (!mqtt_ready)
+  {
+    log_boot_message("ESP", "Wait mqtt...");
+    delay(50);
+  }
+  log_boot_message("ESP", "MQTT connected.");
 
   boot_message("GIFS LOAD!");
   loadGifsByCategory();
@@ -1182,6 +1226,14 @@ void loop()
     unsigned long elapsed = t_end - t_start;
     // delay(1000 - min(elapsed, 1000UL));
     delay(5000);
+    return;
+  }
+
+  if (LED_ONLY_MODE)
+  {
+    dma_display->fillRect(0, 0, PANEL_RES_X * PANEL_CHAIN, PANEL_RES_Y * PANEL_CHAIN, LED_ONLY_COLOR);
+    dma_display->flipDMABuffer();
+    delay(500);
     return;
   }
 

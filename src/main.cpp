@@ -9,6 +9,7 @@
 #include <DHT.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <AnimatedGIF.h>
+#include <ESP32Ping.h>
 #include "Arduino.h"
 #include "time.h"
 #include <esp_system.h>
@@ -331,6 +332,10 @@ void dht_task(void *pvParameters)
   }
 }
 
+bool status_pingprimary = false;
+bool status_pingsecondary = false;
+bool status_dns = false;
+
 void wifi_task(void *pvParameters)
 {
   vTaskDelay(pdMS_TO_TICKS(500));
@@ -340,7 +345,15 @@ void wifi_task(void *pvParameters)
     {
       WiFi.reconnect();
     }
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    else
+    {
+      IPAddress temp;
+      status_pingprimary = Ping.ping(primaryDNS);
+      status_pingsecondary = Ping.ping(secondaryDNS);
+      status_dns = WiFi.hostByName("google.com", temp);
+      // status_dnssecondary = WiFi.hostByName("google.com", secondaryDNS);
+    }
+    vTaskDelay(pdMS_TO_TICKS(10000));
   }
 }
 
@@ -1151,6 +1164,31 @@ void draw_calendar()
   }
 }
 
+void draw_status()
+{
+
+  uint16_t wifistatus = mqttclient.connected() ? myGREEN : (WiFi.isConnected() ? myOrange : myRED);
+
+  // WIFI + mqtt, red: wifi, orange, mqtt
+  dma_display->fillRect(64 - 7, 1, 6, 6, wifistatus);
+
+  // DNS
+  uint16_t dnsstatus = myRED;
+  if (status_pingprimary || status_pingsecondary)
+    dnsstatus = myOrange;
+  if (status_pingprimary && status_pingsecondary)
+    dnsstatus = myGREEN;
+
+  dma_display->fillTriangle(
+      51, 0 + 6,
+      51 + 4, 0 + 6,
+      51 + 2, 0 + 1,
+      dnsstatus);
+
+  uint16_t dnsstatus2 = status_dns ? myGREEN : myRED;
+  dma_display->fillCircle(64 - 6 - 6 - 5, 4, 2, dnsstatus2);
+}
+
 #define CLOCK_OFFSET_Y 30
 void draw_clock(bool night)
 {
@@ -1284,6 +1322,7 @@ void loop()
   dma_display->printf("%d", someVariableHoldingFPS);
 
   draw_clock(false);
+  draw_status();
 
 #if PANEL_DUAL
   draw_calendar();

@@ -7,4 +7,4 @@
 data
 load_gifs.ps1
 src/secrets.h
-ota_upload.ps1
+ota_upload*.ps1

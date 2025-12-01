@@ -1184,7 +1184,7 @@ void draw_status()
   uint16_t wifistatus = mqttclient.connected() ? myGREEN : (WiFi.isConnected() ? myOrange : myRED);
 
   // WIFI + mqtt, red: wifi, orange, mqtt
-  dma_display->fillRect(64 - 7, 1, 6, 6, wifistatus);
+  dma_display->fillRect(64 - 7, 2, 5, 5, wifistatus);
 
   // DNS
   uint16_t dnsstatus = myRED;
@@ -1196,7 +1196,7 @@ void draw_status()
   dma_display->fillTriangle(
       51, 0 + 6,
       51 + 4, 0 + 6,
-      51 + 2, 0 + 1,
+      51 + 2, 2,
       dnsstatus);
 
   uint16_t dnsstatus2 = status_dns ? myGREEN : myRED;

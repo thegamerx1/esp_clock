@@ -35,6 +35,8 @@ struct Frame
 	size_t size = 0;
 };
 
+bool sensor_valid(float t, float h);
+
 bool useBlackText(uint16_t color565);
 uint16_t brightenDown(uint16_t color);
 #endif

@@ -952,19 +952,33 @@ void draw_dht_avg()
 {
   if (xSemaphoreTake(dht_mutex, pdMS_TO_TICKS(10)) == pdTRUE)
   {
-    float temp_sum = dht_temperature;
-    float hum_sum = dht_humidity;
-    int count = 1;
-    if (dht_2_temperature > -99 && dht_2_humidity > -99)
+    float temp_sum = 0;
+    float hum_sum = 0;
+    int count = 0;
+    struct SensorVals
     {
-      temp_sum += dht_2_temperature;
-      hum_sum += dht_2_humidity;
-      count = 2;
+      float t;
+      float h;
+    };
+    SensorVals sensors[] = {
+        {dht_2_temperature, dht_2_humidity},
+        {dht_temperature, dht_humidity}};
+
+    for (int i = 0; i < 2; i++)
+    {
+      if (sensor_valid(sensors[i].t, sensors[i].h))
+      {
+        temp_sum += sensors[i].t;
+        hum_sum += sensors[i].h;
+        count++;
+      }
     }
-    dma_display->setCursor(3, 7);
-    draw_dht(round_float(temp_sum / count), round_float(hum_sum / count));
-    // dma_display->setCursor(5, 12);
-    // draw_dht((int)dht_2_temperature, (int)dht_2_humidity);
+
+    if (count > 0)
+    {
+      dma_display->setCursor(3, 7);
+      draw_dht(round_float(temp_sum / count), round_float(hum_sum / count));
+    }
     xSemaphoreGive(dht_mutex);
   }
   else

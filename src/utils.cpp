@@ -71,6 +71,11 @@ int round_float(float v)
 	return (int)(v + 0.5f);
 }
 
+bool sensor_valid(float t, float h)
+{
+	return (t > -99 && h > -99);
+}
+
 void test_screen(MatrixPanel_I2S_DMA *screen)
 {
 	// fix the screen with green

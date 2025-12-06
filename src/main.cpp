@@ -1007,8 +1007,52 @@ void draw_ram()
   dma_display->printf("%2.f%%\n", psfreePercent);
 }
 
+#define YEAR_PROGRESS_OFFSET_X 65
+#define YEAR_PROGRESS_OFFSET_Y 56
+#define YEAR_PROGRESS_L2_OFFSET 32
+void draw_year_progress()
+{
+  struct tm timeinfo;
+  getLocalTime(&timeinfo, 100);
+  int year = timeinfo.tm_year + 1900;
+  int month = timeinfo.tm_mon + 1;
+  int day = timeinfo.tm_mday;
+
+  // days per month
+  int mdays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+  // leap year fix
+  int leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+  if (leap)
+    mdays[1] = 29;
+
+  // day-of-year (1 Jan = 0%)
+  int doy = 0;
+  for (int i = 0; i < month - 1; i++)
+    doy += mdays[i];
+  doy += day - 1; // make Jan 1 = 0
+
+  int total_days = leap ? 366 : 365;
+
+  double percent = (double)doy / (double)(total_days - 1) * 100.0;
+
+  dma_display->setTextColor(myWHITE);
+  dma_display->setCursor(YEAR_PROGRESS_OFFSET_X, YEAR_PROGRESS_OFFSET_Y + 5);
+  dma_display->printf("%#.0f%% %d", percent, year);
+
+  // dma_display->drawRect(YEAR_PROGRESS_OFFSET_X, YEAR_PROGRESS_OFFSET_Y, 62, 9, myWHITE);
+  dma_display->fillRect(YEAR_PROGRESS_OFFSET_X, YEAR_PROGRESS_OFFSET_Y + 6, (int)((percent / 100.0) * 61), 2, myWHITE);
+  dma_display->drawLine(YEAR_PROGRESS_OFFSET_X - 1, YEAR_PROGRESS_OFFSET_Y + 6, YEAR_PROGRESS_OFFSET_X - 1, YEAR_PROGRESS_OFFSET_Y + 7, myWHITE);
+  dma_display->drawLine(YEAR_PROGRESS_OFFSET_X + 62, YEAR_PROGRESS_OFFSET_Y, YEAR_PROGRESS_OFFSET_X + 62, YEAR_PROGRESS_OFFSET_Y + 8, myWHITE);
+  dma_display->drawLine(YEAR_PROGRESS_OFFSET_X + YEAR_PROGRESS_L2_OFFSET, YEAR_PROGRESS_OFFSET_Y, YEAR_PROGRESS_OFFSET_X + 61, YEAR_PROGRESS_OFFSET_Y, myWHITE);
+  if (percent > YEAR_PROGRESS_L2_OFFSET)
+  {
+    dma_display->fillRect(YEAR_PROGRESS_OFFSET_X + YEAR_PROGRESS_L2_OFFSET, YEAR_PROGRESS_OFFSET_Y + 1, (int)((percent / 100.0) * 61) - YEAR_PROGRESS_L2_OFFSET, 7, myWHITE);
+  }
+}
+
 #define CALENDAR_OFFSET_X 64
-#define CALENDAR_OFFSET_Y 1
+#define CALENDAR_OFFSET_Y 0
 #define CALENDAR_CELL_W 9
 #define CALENDAR_CELL_H 8
 void draw_calendar()
@@ -1268,10 +1312,9 @@ void loop()
     dma_display->clearScreen();
     draw_clock(true);
     draw_dht_avg();
-    if (PANEL_DUAL)
-    {
-      draw_calendar();
-    }
+#if PANEL_DUAL
+    draw_calendar();
+#endif
 
     dma_display->flipDMABuffer();
     unsigned long t_end = millis();
@@ -1340,6 +1383,7 @@ void loop()
 
 #if PANEL_DUAL
   draw_calendar();
+  draw_year_progress();
 #endif
 
 #if PANEL_TRIPLE

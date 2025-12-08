@@ -976,7 +976,7 @@ void draw_dht_avg()
 
     if (count > 0)
     {
-      dma_display->setCursor(3, 7);
+      dma_display->setCursor(1, 6);
       draw_dht(round_float(temp_sum / count), round_float(hum_sum / count));
     }
     xSemaphoreGive(dht_mutex);
@@ -1055,7 +1055,7 @@ void draw_year_progress()
 #define CALENDAR_OFFSET_Y 0
 #define CALENDAR_CELL_W 9
 #define CALENDAR_CELL_H 8
-void draw_calendar()
+void draw_calendar(bool night)
 {
   static bool blinkState = false;
   static unsigned long lastBlink = 0;
@@ -1093,17 +1093,19 @@ void draw_calendar()
 
   dma_display->setTextSize(1);
 
-  // Draw weekdays at the top
-  for (int i = 0; i < 7; i++)
+  if (!night)
   {
-    int x = CALENDAR_OFFSET_X + i * CALENDAR_CELL_W;
-    dma_display->setTextColor(myWHITE);
-    dma_display->setCursor(x + 1, CALENDAR_OFFSET_Y + 6);
-    char c[3] = {DAYS[i][0], DAYS[i][1], '\0'};
-    dma_display->printf(c);
+    // Draw weekdays at the top
+    for (int i = 0; i < 7; i++)
+    {
+      int x = CALENDAR_OFFSET_X + i * CALENDAR_CELL_W;
+      dma_display->setTextColor(myWHITE);
+      dma_display->setCursor(x + 1, CALENDAR_OFFSET_Y + 6);
+      char c[3] = {DAYS[i][0], DAYS[i][1], '\0'};
+      dma_display->printf(c);
+    }
+    dma_display->drawFastHLine(CALENDAR_OFFSET_X, CALENDAR_OFFSET_Y + 6, 64 - 1, myWHITE);
   }
-  dma_display->drawFastHLine(CALENDAR_OFFSET_X, CALENDAR_OFFSET_Y + 6, 64 - 1, myWHITE);
-
   int total_cells = 42;
 
   for (int cell = 0; cell < total_cells; cell++)
@@ -1222,13 +1224,15 @@ void draw_calendar()
   }
 }
 
+#define STATUS_OFFSET_X 58
+#define STATUS_OFFSET_Y 1
 void draw_status()
 {
 
   uint16_t wifistatus = mqttclient.connected() ? myGREEN : (WiFi.isConnected() ? myOrange : myRED);
 
   // WIFI + mqtt, red: wifi, orange, mqtt
-  dma_display->fillRect(64 - 7, 2, 5, 5, wifistatus);
+  dma_display->fillRect(STATUS_OFFSET_X, STATUS_OFFSET_Y, 5, 5, wifistatus);
 
   // DNS
   uint16_t dnsstatus = myRED;
@@ -1238,16 +1242,16 @@ void draw_status()
     dnsstatus = myGREEN;
 
   dma_display->fillTriangle(
-      51, 0 + 6,
-      51 + 4, 0 + 6,
-      51 + 2, 2,
+      STATUS_OFFSET_X - 6, STATUS_OFFSET_Y + 4,
+      STATUS_OFFSET_X - 6 + 4, STATUS_OFFSET_Y + 4,
+      STATUS_OFFSET_X - 6 + 2, STATUS_OFFSET_Y,
       dnsstatus);
 
   uint16_t dnsstatus2 = status_dns ? myGREEN : myRED;
-  dma_display->fillCircle(64 - 6 - 6 - 5, 4, 2, dnsstatus2);
+  dma_display->fillCircle(STATUS_OFFSET_X - 6 - 4, STATUS_OFFSET_Y + 2, 2, dnsstatus2);
 }
 
-#define CLOCK_OFFSET_Y 30
+#define CLOCK_OFFSET_Y 29
 void draw_clock(bool night)
 {
   struct tm timeinfo;
@@ -1279,7 +1283,7 @@ void draw_clock(bool night)
   }
 
   dma_display->setFont(&TomThumb);
-  dma_display->setCursor(3, CLOCK_OFFSET_Y - 16);
+  dma_display->setCursor(6, CLOCK_OFFSET_Y - 16);
   dma_display->printf("%s, %d %s\n", DAYS[(timeinfo.tm_wday + 6) % 7], timeinfo.tm_mday, MONTHS[timeinfo.tm_mon]);
 }
 
@@ -1313,7 +1317,7 @@ void loop()
     draw_clock(true);
     draw_dht_avg();
 #if PANEL_DUAL
-    draw_calendar();
+    draw_calendar(true);
 #endif
 
     dma_display->flipDMABuffer();
@@ -1369,10 +1373,10 @@ void loop()
 
   draw_dht_avg();
 
-  dma_display->setCursor(31, 62);
+  dma_display->setCursor(33, 63);
   draw_ram();
 
-  dma_display->setCursor(3, 62);
+  dma_display->setCursor(1, 63);
   dma_display->setTextColor(myWHITE);
   dma_display->print("FPS");
   dma_display->setTextColor(myGRAY);
@@ -1382,7 +1386,7 @@ void loop()
   draw_status();
 
 #if PANEL_DUAL
-  draw_calendar();
+  draw_calendar(false);
   draw_year_progress();
 #endif
 

@@ -1038,7 +1038,7 @@ void draw_year_progress()
 
   dma_display->setTextColor(myWHITE);
   dma_display->setCursor(YEAR_PROGRESS_OFFSET_X, YEAR_PROGRESS_OFFSET_Y + 5);
-  dma_display->printf("%#.0f%% %d", percent, year);
+  dma_display->printf("%d%% %d", (int)percent, year);
 
   // dma_display->drawRect(YEAR_PROGRESS_OFFSET_X, YEAR_PROGRESS_OFFSET_Y, 62, 9, myWHITE);
   dma_display->fillRect(YEAR_PROGRESS_OFFSET_X, YEAR_PROGRESS_OFFSET_Y + 6, (int)((percent / 100.0) * 61), 2, myWHITE);
@@ -1283,7 +1283,7 @@ void draw_clock(bool night)
   }
 
   dma_display->setFont(&TomThumb);
-  dma_display->setCursor(6, CLOCK_OFFSET_Y - 16);
+  dma_display->setCursor(2, CLOCK_OFFSET_Y - 16);
   dma_display->printf("%s, %d %s\n", DAYS[(timeinfo.tm_wday + 6) % 7], timeinfo.tm_mday, MONTHS[timeinfo.tm_mon]);
 }
 

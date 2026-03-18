@@ -414,8 +414,7 @@ void restore_clock_and_resume_tasks()
 void mqtt_callback(char *topic, byte *payload, unsigned int length)
 {
   log_boot_message("MQTT", "Received topic: %s", topic);
-  payload[length] = '\0';
-  String val = String((char *)payload);
+  String val((const char *)payload, length);
   if (strcmp(topic, mqtt_topic_brightness) == 0)
   {
     int brightness = val.toInt();

@@ -522,6 +522,7 @@ void mqtt_task(void *pvParameters)
 {
   mqttclient.setServer(MQTT_SERVER, MQTT_PORT);
   mqttclient.setCallback(mqtt_callback);
+  bool first_boot = true;
   while (1)
   {
     while (!mqttclient.connected())
@@ -567,8 +568,11 @@ void mqtt_task(void *pvParameters)
         log_boot_message("MQTT", "Connected to mqtt.");
         break;
       };
-      vTaskDelay(pdMS_TO_TICKS(1000));
+      mqttclient.loop();
+      vTaskDelay(pdMS_TO_TICKS(first_boot ? 100 : 1000));
     }
+
+    first_boot = false;
 
     mqttclient.loop();
     mqtt_ready = true;

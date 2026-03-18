@@ -1125,6 +1125,7 @@ void draw_calendar(bool night)
     int display_month;
     bool is_current_month = false;
     bool is_prev_month = false;
+    bool is_passed = false;
     bool is_next_month = false;
 
     if (cell < start_weekday)
@@ -1142,6 +1143,7 @@ void draw_calendar(bool night)
       display_year = current_year;
       display_month = current_month;
       is_current_month = true;
+      is_passed = current_day > display_day;
     }
     else
     {
@@ -1159,7 +1161,6 @@ void draw_calendar(bool night)
     dma_display->setCursor(x + 1, y + 6);
 
     uint16_t textColor = myWHITE;
-    bool is_today = false;
 
     if (date_colors.find(date_str) != date_colors.end())
     {
@@ -1176,6 +1177,11 @@ void draw_calendar(bool night)
       }
     }
 
+    bool is_today = false;
+
+    uint crosshair_y0 = y - 1;
+    uint crosshair_y1 = y + CALENDAR_CELL_H - 1;
+    uint crosshair_x1 = x + CALENDAR_CELL_W - 1;
     if (is_current_month && display_day == current_day)
     {
       is_today = true;
@@ -1186,19 +1192,18 @@ void draw_calendar(bool night)
         lastBlink = now;
       }
 
-      uint16_t color = blinkState ? myRED : myGRAY;
-      uint crosshair_y0 = y - 1;
-      uint crosshair_y1 = y + CALENDAR_CELL_H - 1;
-      uint crosshair_x1 = x + CALENDAR_CELL_W - 1;
+      uint16_t color = blinkState ? myLightGRAY : myGRAY;
+
+      dma_display->drawRoundRect(x, crosshair_y0, CALENDAR_CELL_W, CALENDAR_CELL_H + 1, 0, myWHITE);
       // Top
-      dma_display->drawFastHLine(x, crosshair_y0, CALENDAR_CELL_W, color);
-      // dma_display->drawFastHLine(crosshair_x1 - 3, crosshair_y0, 3, color);
-      dma_display->drawFastVLine(x, crosshair_y0, 4, color);
-      dma_display->drawFastVLine(crosshair_x1, crosshair_y0, 4, color);
+      dma_display->drawFastHLine(x + 1, crosshair_y0, 3, color);
+      dma_display->drawFastHLine(crosshair_x1 - 3, crosshair_y0, 3, color);
+      dma_display->drawFastVLine(x, crosshair_y0 + 1, 3, color);
+      dma_display->drawFastVLine(crosshair_x1, crosshair_y0 + 1, 3, color);
 
       // Bottom
-      dma_display->drawFastHLine(x, crosshair_y1, CALENDAR_CELL_W, color);
-      // dma_display->drawFastHLine(crosshair_x1 - 3, crosshair_y1, 3, color);
+      dma_display->drawFastHLine(x + 1, crosshair_y1, 3, color);
+      dma_display->drawFastHLine(crosshair_x1 - 3, crosshair_y1, 3, color);
       dma_display->drawFastVLine(x, crosshair_y1 - 3, 3, color);
       dma_display->drawFastVLine(crosshair_x1, crosshair_y1 - 3, 3, color);
       // dma_display->drawRoundRect(x, y, CALENDAR_CELL_W, CALENDAR_CELL_H - 1, 2, color);
@@ -1224,6 +1229,10 @@ void draw_calendar(bool night)
       dma_display->setTextColor(textColor);
     }
 
+    if (is_prev_month || is_passed)
+    {
+      dma_display->drawLine(x, crosshair_y0, crosshair_x1, crosshair_y1 - 1, myRED);
+    }
     dma_display->printf("%2d", display_day);
   }
 }

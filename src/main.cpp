@@ -201,19 +201,17 @@ void log_task(void *pvParameters)
 
 void log_boot_message(const char *tag, const char *format, ...)
 {
-  va_list args;
   char buffer[512];
-  printf("%s: ", tag);
-  va_start(args, format);
-  vprintf(format, args);
-  printf("\n");
-
   int len = snprintf(buffer, sizeof(buffer), "%s: ", tag);
-  if (len > 0 && len < (int)sizeof(buffer))
-  {
-    vsnprintf(buffer + len, sizeof(buffer) - len, format, args);
-  }
+  if (len < 0 || len >= (int)sizeof(buffer))
+    return;
+
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buffer + len, sizeof(buffer) - len, format, args);
   va_end(args);
+
+  printf("%s\n", buffer);
 
   std::lock_guard<std::mutex> lock(queue_mutex);
   if (message_queue.size() < 50)

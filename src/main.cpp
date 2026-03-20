@@ -371,29 +371,28 @@ void pause_tasks()
   }
 }
 
-void pause_tasks_and_reduce_clock()
+void enter_powersave()
 {
   log_boot_message("ESP", "Entering power save mode");
 
-  // pause_tasks();
-
-  // Lower CPU frequency to 80MHz (from default 240MHz)
   PANEL_BRIGHTNESS = 0;
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
   POWER_SAVING = true;
   activate_power_save_fn = true;
+
   esp_pm_config_esp32s3_t pm_config = {
       .max_freq_mhz = 80,
       .min_freq_mhz = 80,
       .light_sleep_enable = true};
+
   esp_pm_configure(&pm_config);
 }
 
-void restore_clock_and_resume_tasks()
+void exit_powersave()
 {
   log_boot_message("ESP", "Exiting power save mode");
-  // Restore CPU frequency to 240MHz
+
   esp_pm_config_esp32s3_t pm_config = {
       .max_freq_mhz = 240,
       .min_freq_mhz = 240,
@@ -438,11 +437,11 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     POWER_MODE = (val == "on");
     if (POWER_MODE && !SLEEP_CLOCK)
     {
-      restore_clock_and_resume_tasks();
+      exit_powersave();
     }
     else
     {
-      pause_tasks_and_reduce_clock();
+      enter_powersave();
     }
     activate_power_save_fn = true;
   }
@@ -452,11 +451,11 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     set_palette(SLEEP_CLOCK);
     if (SLEEP_CLOCK)
     {
-      pause_tasks_and_reduce_clock();
+      enter_powersave();
     }
     else if (POWER_MODE)
     {
-      restore_clock_and_resume_tasks();
+      exit_powersave();
     }
     activate_power_save_fn = true;
   }

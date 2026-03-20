@@ -874,9 +874,7 @@ void setup()
     log_boot_message("ESP", "Connecting to WIFI");
   }
   boot_message("WIFI OK!");
-  // TODO: Fix the cert
-  // espClient.setCACert(CA_CERT);
-  espClient.setInsecure();
+  espClient.setCACert(CA_CERT);
 
   boot_message("PANEL!");
   delay(200);

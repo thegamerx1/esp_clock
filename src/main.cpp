@@ -64,8 +64,10 @@ MatrixPanel_I2S_DMA *dma_display = nullptr;
 uint16_t *GIF_BUFFER;
 uint16_t gif_index;
 uint8_t PANEL_BRIGHTNESS;
+uint8_t LAST_PANEL_BRIGHTNESS;
 bool POWER_MODE = true;
 bool POWER_SAVING = false;
+bool STOP_DMA = false;
 bool activate_power_save_fn = false;
 
 AnimatedGIF gif;
@@ -374,7 +376,7 @@ void pause_tasks_and_reduce_clock()
   // pause_tasks();
 
   // Lower CPU frequency to 80MHz (from default 240MHz)
-  dma_display->setBrightness(0);
+  PANEL_BRIGHTNESS = 0;
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
   POWER_SAVING = true;
@@ -408,7 +410,7 @@ void restore_clock_and_resume_tasks()
       vTaskResume(task_handles[i]);
     }
   }
-  dma_display->setBrightness(PANEL_BRIGHTNESS);
+  PANEL_BRIGHTNESS = LAST_PANEL_BRIGHTNESS;
 }
 
 void mqtt_callback(char *topic, byte *payload, unsigned int length)
@@ -418,10 +420,6 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   if (strcmp(topic, mqtt_topic_brightness) == 0)
   {
     int brightness = val.toInt();
-    if (!POWER_SAVING)
-    {
-      dma_display->setBrightness8(brightness);
-    }
     PANEL_BRIGHTNESS = brightness;
   }
   else if (strcmp(topic, mqtt_topic_dht_2) == 0)
@@ -795,8 +793,7 @@ void ota_task(void *pvParameters)
                       if (loopHandle != NULL) {
                         vTaskSuspend(loopHandle);
                       }
-                      dma_display->clearScreen();
-                      dma_display->stopDMAoutput(); });
+                      STOP_DMA = 1; });
   ArduinoOTA.onEnd([]()
                    { log_boot_message("OTA", "End"); });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
@@ -1307,6 +1304,19 @@ void loop()
   static unsigned long lastMillis = 0;
   static int frames = 0;
 
+  if (STOP_DMA)
+  {
+    dma_display->clearScreen();
+    dma_display->stopDMAoutput();
+    delay(500);
+    return;
+  }
+
+  if (PANEL_BRIGHTNESS != LAST_PANEL_BRIGHTNESS && !POWER_SAVING)
+  {
+    dma_display->setBrightness8(PANEL_BRIGHTNESS);
+    LAST_PANEL_BRIGHTNESS = PANEL_BRIGHTNESS;
+  }
   if (POWER_SAVING && activate_power_save_fn)
   {
     dma_display->clearScreen();

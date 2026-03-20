@@ -339,11 +339,12 @@ bool status_dns = false;
 
 void wifi_task(void *pvParameters)
 {
-  vTaskDelay(pdMS_TO_TICKS(500));
+  vTaskDelay(pdMS_TO_TICKS(1000));
   while (1)
   {
     if (WiFi.status() != WL_CONNECTED)
     {
+      log_boot_message("ESP", "Reconnect wifi");
       WiFi.reconnect();
     }
     else
@@ -354,7 +355,7 @@ void wifi_task(void *pvParameters)
       status_dns = WiFi.hostByName("google.com", temp);
       // status_dnssecondary = WiFi.hostByName("google.com", secondaryDNS);
     }
-    vTaskDelay(pdMS_TO_TICKS(10000));
+    vTaskDelay(pdMS_TO_TICKS(5000));
   }
 }
 
@@ -578,7 +579,7 @@ void mqtt_task(void *pvParameters)
     }
     else
     {
-      vTaskDelay(pdMS_TO_TICKS(10));
+      vTaskDelay(pdMS_TO_TICKS(30));
     }
   }
 }
@@ -707,7 +708,7 @@ void gif_task(void *pvParameters)
     }
     if (ANIM_DISABLE)
     {
-      vTaskDelay(pdMS_TO_TICKS(1000));
+      vTaskDelay(pdMS_TO_TICKS(250));
       continue;
     }
 
@@ -871,16 +872,14 @@ void setup()
 
   while (WiFi.status() != WL_CONNECTED)
   {
-    delay(500);
+    delay(250);
     log_boot_message("ESP", "Connecting to WIFI");
   }
   boot_message("WIFI OK!");
   espClient.setCACert(CA_CERT);
 
   boot_message("PANEL!");
-  delay(200);
   configure_panel(true);
-  LED_ONLY_COLOR = dma_display->color565(0, 0, 0);
   LED_ONLY_COLOR = dma_display->color565(255, 0, 0);
 
 #if ENABLE_GIFS
@@ -922,7 +921,7 @@ void setup()
     struct tm timeinfo;
     if (getLocalTime(&timeinfo, 100))
       break;
-    delay(50);
+    delay(100);
   }
 
   boot_message("WAIT MQTT!");
@@ -1274,7 +1273,6 @@ void draw_clock(bool night)
 
   if (night)
   {
-
     dma_display->setTextColor(myLightGRAY);
     dma_display->print(time.substring(0, 5));
     // dma_display->setCursor(20, CLOCK_OFFSET_Y + 17);
@@ -1301,7 +1299,6 @@ void loop()
   static const uint32_t frameDelayMs = 1000 / 100;
   static uint32_t lastFrameTime = 0;
   static int someVariableHoldingFPS = 0;
-  static uint16_t last_gif = 0;
   static unsigned long lastMillis = 0;
   static int frames = 0;
 
@@ -1333,18 +1330,13 @@ void loop()
   if (SLEEP_CLOCK)
   {
     dma_display->setBrightness8(5);
-    unsigned long t_start = millis();
     dma_display->clearScreen();
     draw_clock(true);
     draw_dht_avg();
 #if PANEL_DUAL
     draw_calendar(true);
 #endif
-
     dma_display->flipDMABuffer();
-    unsigned long t_end = millis();
-    unsigned long elapsed = t_end - t_start;
-    // delay(1000 - min(elapsed, 1000UL));
     delay(5000);
     return;
   }

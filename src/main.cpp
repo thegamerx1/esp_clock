@@ -25,6 +25,7 @@
 #define MAX_TASKS 6
 
 // ---- PANEL CONFIG ----
+#define ENABLE_GIFS 1
 #define PANEL_RES_X 64
 #define PANEL_RES_Y 64
 #define PANEL_CHAIN 3
@@ -881,34 +882,11 @@ void setup()
   configure_panel(true);
   LED_ONLY_COLOR = dma_display->color565(0, 0, 0);
   LED_ONLY_COLOR = dma_display->color565(255, 0, 0);
-  delay(200);
 
-  boot_message("TASKS!");
-  dht_mutex = xSemaphoreCreateMutex();
-  task_handles[0] = NULL;
-
-  xTaskCreate(dht_task, "dht_task", 8192, NULL, 1, &task_handles[0]);
-  xTaskCreate(mqtt_task, "mqtt_task", 8192, NULL, 5, &task_handles[1]);
-  xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 3, &task_handles[2]);
-  xTaskCreate(gif_task, "gif_task", 4096, NULL, 2, &task_handles[3]);
-  xTaskCreate(wifi_task, "wifi_task", 4096, NULL, 2, NULL);
-  xTaskCreate(ota_task, "ota_task", 8192, NULL, 5, NULL);
-  xTaskCreate(log_task, "log_task", 5012, NULL, 1, &task_handles[4]);
-
-  configTzTime(MY_TIMEZONE, NTP_SERVER, NTP_SERVER_FALLBACK);
-
-  boot_message("WAIT SERVER!");
-  while (!mqtt_ready)
-  {
-    log_boot_message("ESP", "Wait mqtt...");
-    delay(50);
-  }
-  log_boot_message("ESP", "MQTT connected.");
-
+#if ENABLE_GIFS
   boot_message("GIFS LOAD!");
   loadGifsByCategory();
   boot_message("GIFS: " + String(LOADED_ANIMATIONS));
-
   boot_message("BUFFER!");
   gif.begin(GIF_PALETTE_RGB565_LE);
   GIF_BUFFER = (uint16_t *)ps_malloc(64 * 64 * 2);
@@ -918,6 +896,23 @@ void setup()
     return;
   }
   memset(GIF_BUFFER, 0, 64 * 64 * 2);
+#endif
+
+  boot_message("TASKS!");
+  dht_mutex = xSemaphoreCreateMutex();
+  task_handles[0] = NULL;
+
+  xTaskCreate(dht_task, "dht_task", 8192, NULL, 1, &task_handles[0]);
+  xTaskCreate(mqtt_task, "mqtt_task", 8192, NULL, 5, &task_handles[1]);
+  xTaskCreate(mqtt_publish, "mqtt_publish", 8192, NULL, 3, &task_handles[2]);
+#if ENABLE_GIFS
+  xTaskCreate(gif_task, "gif_task", 4096, NULL, 2, &task_handles[3]);
+#endif
+  xTaskCreate(wifi_task, "wifi_task", 4096, NULL, 2, NULL);
+  xTaskCreate(ota_task, "ota_task", 8192, NULL, 5, NULL);
+  xTaskCreate(log_task, "log_task", 5012, NULL, 1, &task_handles[4]);
+
+  configTzTime(MY_TIMEZONE, NTP_SERVER, NTP_SERVER_FALLBACK);
 
   boot_message("WAIT CLOCK!");
   while (true)
@@ -929,6 +924,14 @@ void setup()
       break;
     delay(50);
   }
+
+  boot_message("WAIT MQTT!");
+  while (!mqtt_ready)
+  {
+    log_boot_message("ESP", "Wait mqtt...");
+    delay(100);
+  }
+  log_boot_message("ESP", "MQTT connected.");
 }
 
 void draw_dht(int temp, int hum)
@@ -1408,8 +1411,8 @@ void loop()
   draw_year_progress();
 #endif
 
-#if PANEL_TRIPLE
-  if (!ANIM_DISABLE && !SLEEP_CLOCK)
+#if PANEL_TRIPLE && ENABLE_GIFS
+  if (!ANIM_DISABLE)
   {
     dma_display->drawRGBBitmap(64 * 2, 0, GIF_BUFFER, 64, 64);
   }

@@ -506,10 +506,11 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   }
   else if (strcmp(topic, mqtt_topic_animation) == 0)
   {
-    log_boot_message("GIF", "Setting animation category to: %s", val);
+    log_boot_message("GIF", "Setting animation category to: %s", val.c_str());
     if (!PANEL_FRAMES.count(val))
     {
-      log_boot_message("GIF", "Received Invalid animation: %s", val);
+      log_boot_message("GIF", "Received invalid animation: %s", val.c_str());
+      return;
     }
     currentFrame = val;
   }
@@ -755,7 +756,8 @@ void gif_task(void *pvParameters)
 #define MAX_BOOT_LINES 10
 void boot_message(String message)
 {
-  log_boot_message("ESP", "BOOT: %s", message);
+  log_boot_message("ESP", "BOOT: %s", message.c_str());
+
   static String lines[MAX_BOOT_LINES];
   static int index = 0;
   static int count = 0;
@@ -788,7 +790,7 @@ void ota_task(void *pvParameters)
   ArduinoOTA.onStart([]()
                      {
                       String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
-                      log_boot_message("OTA", "Start updating %s", type);
+                      log_boot_message("OTA", "Start updating %s", type.c_str());
                       pause_tasks();
                       TaskHandle_t loopHandle = xTaskGetHandle("loopTask");
 
@@ -799,7 +801,7 @@ void ota_task(void *pvParameters)
   ArduinoOTA.onEnd([]()
                    { log_boot_message("OTA", "End"); });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
-                        { log_boot_message("OTA", "Progress: %u%%\r", (progress / (total / 100))); });
+                        { log_boot_message("OTA", "Progress: %u%%", (progress / (total / 100))); });
   ArduinoOTA.onError([](ota_error_t error)
                      { log_boot_message("OTA", "Error[%u]: ", error); esp_restart(); });
   ArduinoOTA.begin();
@@ -851,7 +853,7 @@ void setup()
 {
   Serial.begin(115200);
   log_boot_message("ESP", "Starting!");
-  log_boot_message("ESP", "Firmware compiled on %s at %s\n", __DATE__, __TIME__);
+  log_boot_message("ESP", "Firmware compiled on %s at %s", __DATE__, __TIME__);
 
   boot_message("Firmware:");
   boot_message(String(" ") + __DATE__);
@@ -1100,7 +1102,7 @@ void draw_calendar(bool night)
       dma_display->setTextColor(myWHITE);
       dma_display->setCursor(x + 1, CALENDAR_OFFSET_Y + 6);
       char c[3] = {DAYS[i][0], DAYS[i][1], '\0'};
-      dma_display->printf(c);
+      dma_display->print(c);
     }
     dma_display->drawFastHLine(CALENDAR_OFFSET_X, CALENDAR_OFFSET_Y + 6, 64 - 1, myWHITE);
   }

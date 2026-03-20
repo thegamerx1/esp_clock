@@ -947,6 +947,20 @@ void draw_dht(int temp, int hum)
   dma_display->printf("%02d%%\n", hum);
 }
 
+void draw_guide()
+{
+  // uint16_t rgb_color = rainbow565(t % 256);
+  // int x = t % (dma_display->width() + 10);
+  // int x2 = (t + 16) % (dma_display->width() + 10);
+
+  // CENTER LINE
+  // dma_display->fillRect(31, 0, 2, 64, myWHITE);
+
+  // dma_display->drawRect(1, 1, 62, 62, rgb_color_rect);
+  // dma_display->fillCircle(x - 5, 55, 5, rgb_color);
+  // dma_display->fillCircle(x2 - 5, 55, 5, rgb_color);
+}
+
 void draw_dht_avg()
 {
   if (xSemaphoreTake(dht_mutex, pdMS_TO_TICKS(10)) == pdTRUE)
@@ -1362,28 +1376,14 @@ void loop()
     }
     lastFrameTime = now;
   }
-  // else
-  // {
-  //   delay(frameDelayMs - (now - lastFrameTime));
-  //   return;
-  // }
 
   uint32_t t = now / 8;
 
   dma_display->clearScreen();
-  // dma_display->writeFillRect(0, 0, 64 * 2, 64, myBLACK);
 
   dma_display->setTextSize(1);
-  // uint16_t rgb_color = rainbow565(t % 256);
-  // int x = t % (dma_display->width() + 10);
-  // int x2 = (t + 16) % (dma_display->width() + 10);
 
-  // CENTER LINE
-  // dma_display->fillRect(31, 0, 2, 64, myWHITE);
-
-  // dma_display->drawRect(1, 1, 62, 62, rgb_color_rect);
-  // dma_display->fillCircle(x - 5, 55, 5, rgb_color);
-  // dma_display->fillCircle(x2 - 5, 55, 5, rgb_color);
+  // draw_guide();
 
   draw_dht_avg();
 

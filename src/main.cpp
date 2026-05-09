@@ -6,7 +6,6 @@
 #include <WiFiClientSecure.h>
 #include <Fonts/TomThumb.h>
 #include <Fonts/FreeSerifBold12pt7b.h>
-#include <DHT.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <AnimatedGIF.h>
 #include <ESP32Ping.h>
@@ -50,9 +49,6 @@
 #define CLK_PIN 41
 #define FRAME_COUNT 32
 
-#define DHTPIN 9
-#define DHTTYPE DHT22
-
 // #define FRAME_SIZE (PANEL_RES_X * PANEL_RES_Y)
 // #define FRAME_BYTES (FRAME_SIZE * 2)
 const int maxGifDuration = 30000; // ms, max GIF duration
@@ -78,7 +74,6 @@ const char *mqtt_topic_animation = "home/esp1/animation";
 const char *mqtt_topic_power = "home/esp1/power";
 const char *mqtt_topic_sleep_mode = "home/esp1/sleep_mode";
 const char *mqtt_topic_animonly = "home/esp1/animonly";
-const char *mqtt_topic_rgbborder = "home/esp1/rgbborder";
 const char *mqtt_topic_ledmode = "home/esp1/ledmode";
 const char *mqtt_topic_ledcolor = "home/esp1/ledcolor";
 const char *mqtt_topic_disable_anims = "home/esp1/animdisable";
@@ -89,14 +84,11 @@ const char *mqtt_topic_log = "home/esp1/log";
 
 std::map<String, uint8_t> date_colors;
 
-bool ANIM_DISABLE = true;
-bool ANIM_RGBBORDER = false;
-bool ANIM_ONLY_MODE = false;
-bool LED_ONLY_MODE = false;
-bool SLEEP_CLOCK = false;
+volatile bool ANIM_DISABLE = false;
+volatile bool ANIM_ONLY_MODE = false;
+volatile bool LED_ONLY_MODE = false;
+volatile bool SLEEP_CLOCK = false;
 uint16_t LED_ONLY_COLOR;
-
-DHT dht(DHTPIN, DHTTYPE);
 
 SemaphoreHandle_t dht_mutex;
 float dht_temperature = -99;
@@ -303,7 +295,15 @@ void loadGifsByCategory()
   }
 }
 
-void dht_task(void *pvParameters)
+bool status_pingprimary = false;
+bool status_pingsecondary = false;
+bool status_dns = false;
+
+static void wifi_event_handler(
+    void *arg,
+    esp_event_base_t event_base,
+    int32_t event_id,
+    void *event_data)
 {
   vTaskDelay(pdMS_TO_TICKS(500));
   log_boot_message("DHT22", "Init DHT22");
@@ -535,20 +535,16 @@ void mqtt_task(void *pvParameters)
         }
         if (!mqttclient.subscribe(mqtt_topic_animonly))
         {
-          mqttclient.publish(mqtt_topic_power, "off", true);
+          mqttclient.publish(mqtt_topic_animonly, "off", true);
         }
         mqttclient.subscribe(mqtt_topic_calendar);
-        if (!mqttclient.subscribe(mqtt_topic_rgbborder))
-        {
-          mqttclient.publish(mqtt_topic_rgbborder, "off", true);
-        }
         if (!mqttclient.subscribe(mqtt_topic_disable_anims))
         {
-          mqttclient.publish(mqtt_topic_rgbborder, "off", true);
+          mqttclient.publish(mqtt_topic_disable_anims, "off", true);
         }
         if (!mqttclient.subscribe(mqtt_topic_sleep_mode))
         {
-          mqttclient.publish(mqtt_topic_rgbborder, "off", true);
+          mqttclient.publish(mqtt_topic_sleep_mode, "off", true);
         }
         if (!mqttclient.subscribe(mqtt_topic_animation))
         {
@@ -1410,13 +1406,6 @@ void loop()
     dma_display->drawRGBBitmap(64 * 2, 0, GIF_BUFFER, 64, 64);
   }
 #endif
-
-  // RGB BORDER
-  if (ANIM_RGBBORDER)
-  {
-    uint16_t rgb_color_rect = rainbow565((t + 64) % 256);
-    dma_display->drawRect(0, 0, PANEL_RES_X * PANEL_CHAIN, PANEL_RES_Y, rgb_color_rect);
-  }
 
   dma_display->flipDMABuffer();
 }

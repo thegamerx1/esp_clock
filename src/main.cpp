@@ -492,10 +492,16 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
   else if (strcmp(topic, mqtt_topic_dht_2) == 0)
   {
     JsonDocument doc;
-    deserializeJson(doc, val);
+    DeserializationError err = deserializeJson(doc, val);
+    if (err)
+    {
+      log_boot_message("DHT2", "Invalid JSON");
+      return;
+    }
+
     xSemaphoreTake(dht_mutex, portMAX_DELAY);
-    dht_2_temperature = doc["temperature"];
-    dht_2_humidity = doc["humidity"];
+    dht_2_temperature = doc["temperature"] | dht_2_temperature;
+    dht_2_humidity = doc["humidity"] | dht_2_humidity;
     xSemaphoreGive(dht_mutex);
   }
   else if (strcmp(topic, mqtt_topic_power) == 0)
@@ -534,14 +540,14 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     log_boot_message("CAL", "Got calendar");
     log_boot_message("CAL", "%s", val.c_str());
     JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, payload, length);
+    DeserializationError err = deserializeJson(doc, val);
     if (err)
     {
-      log_boot_message("CAL", "Error calendar");
-      mqttclient.subscribe(mqtt_topic_calendar);
+      log_boot_message("CAL", "Error parsing calendar JSON");
+      return;
     }
-    else
-    {
+
+    xSemaphoreTake(calendar_mutex, portMAX_DELAY);
       date_colors.clear();
       JsonObject colors = doc.as<JsonObject>();
       for (JsonPair p : colors)

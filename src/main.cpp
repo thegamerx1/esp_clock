@@ -150,7 +150,7 @@ static void set_current_frame_safe(const String &frame)
   xSemaphoreGive(frame_mutex);
 }
 
-static String get_current_frame_safe()
+String get_current_frame_safe()
 {
   xSemaphoreTake(frame_mutex, portMAX_DELAY);
   String frame = currentFrame;
@@ -814,9 +814,10 @@ void gif_task(void *pvParameters)
     }
 
     gif_index++;
-    // memset(GIF_BUFFER, 0, 64 * 64 * 2);
 
-    auto &myframes = PANEL_FRAMES[currentFrame];
+    String selectedFrame = get_current_frame_safe();
+    auto &myframes = PANEL_FRAMES[selectedFrame];
+
     if (myframes.empty())
     {
       vTaskDelay(pdMS_TO_TICKS(2500));
@@ -826,7 +827,8 @@ void gif_task(void *pvParameters)
     {
       played_gif = 0;
     }
-    log_boot_message("GIF", "Playing gif: %s, ID: %d", currentFrame.c_str(), played_gif);
+
+    log_boot_message("GIF", "Playing gif: %s, ID: %d", selectedFrame.c_str(), played_gif);
     gif.open(myframes[played_gif].data, myframes[played_gif].size, GIFDraw);
 
     int frameDelay = 0;
